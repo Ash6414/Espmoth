@@ -165,9 +165,18 @@ void setup() {
     deepSleepMinutes(DEFAULT_SLEEP_MINUTES);
   }
 
-  postTimeCheck(serverEpoch, rttMs, "ESP32 clock synced from server; AudioMoth time will be set over UART bridge when service window opens");
-  postHeartbeat(serverEpoch, power, lastUpload);
-  pollCommands(serverEpoch, power);
+  bool mothTimeSynced = syncMothTimeOnly(serverEpoch);
+
+postTimeCheck(
+  serverEpoch,
+  rttMs,
+  mothTimeSynced
+    ? "ESP32 clock synced from server; AudioMoth TIME command sent successfully"
+    : "ESP32 clock synced from server; AudioMoth TIME command failed or bridge not ready"
+);
+
+postHeartbeat(serverEpoch, power, lastUpload);
+pollCommands(serverEpoch, power);
 
   power = readPowerState();
   if (powerAllowsUpload(power, false)) {
