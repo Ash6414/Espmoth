@@ -10,13 +10,13 @@
 // ----------------------------
 // Wi-Fi and server
 // ----------------------------
-#define WIFI_SSID       "Willows"
-#define WIFI_PASSWORD   "Willows0824!!"
+#define WIFI_SSID       "wifissid"
+#define WIFI_PASSWORD   "wifipass"
 
-#define BASE_URL        "http://192.168.0.207:8000"
+#define BASE_URL        "yourip"
 #define NODE_ID         "BATNODE_001"
 #define KEY_ID          "key-1"
-#define DEVICE_SECRET   "065ea008379ad8ac28c79563181f88087539657c2cce77d447e41eb9b64a5873"
+#define DEVICE_SECRET   "secret"
 
 // Existing server endpoints from the working GPS-spoof sketch.
 #define ENDPOINT_SERVER_TIME      "/v1/public/server_time"
