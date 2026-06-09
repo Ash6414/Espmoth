@@ -70,12 +70,6 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
     return summary;
   }
 
-  if (mothBusy()) {
-    summary.code = UPLOAD_SKIPPED_BUSY;
-    summary.message = "AudioMoth busy; upload skipped";
-    return summary;
-  }
-
   if (!openBridgeSession(serverEpoch)) {
     summary.code = UPLOAD_BRIDGE_FAILED;
     summary.message = "bridge session failed";
