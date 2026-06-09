@@ -11,6 +11,7 @@ struct PowerState {
 struct MothFile {
   String path;
   uint32_t size;
+  uint32_t localFileId;
 };
 
 struct ChunkResult {
@@ -37,4 +38,21 @@ struct UploadSummary {
   uint16_t filesUploaded;
   uint16_t filesDeleted;
   String message;
+};
+
+struct UploadSession {
+  bool ok;
+  bool alreadyComplete;
+  String uploadId;
+  uint32_t fileId;
+  uint32_t chunkSize;
+};
+
+struct DeleteCandidate {
+  uint32_t fileId;
+  uint32_t localFileId;
+  String filename;
+  String path;
+  bool deleted;
+  String error;
 };
