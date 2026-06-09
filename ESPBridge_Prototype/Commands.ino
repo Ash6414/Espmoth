@@ -10,8 +10,10 @@ void printHelp() {
   Serial.println("  time <epoch>      Send TIME <epoch> 0");
   Serial.println("  raw <command>     Send a raw bridge command");
   Serial.println("  reqprobe <sec>    Hold REQ high, send PINGs, log BUSY/UART");
+  Serial.println("  swapprobe <sec>   Run reqprobe with ESP RX/TX pins swapped");
   Serial.println("  watch <sec>       Log REQ/BUSY without changing pins");
   Serial.println("  done              Send DONE and deassert REQ");
+  Serial.println("  swap 0|1          Reconfigure ESP UART pins normal/swapped");
   Serial.println("  req 0|1           Manually set ESP_REQ");
   Serial.println("  flush             Clear ESP UART RX buffer");
   Serial.println();
@@ -72,20 +74,23 @@ uint32_t parseSecondsOrDefault(const String &arg, uint32_t defaultSeconds) {
   return seconds;
 }
 
-void printProbeSample(uint32_t elapsedMs, int &lastReq, int &lastBusy, bool force) {
+void printProbeSample(uint32_t elapsedMs, int &lastReq, int &lastBusy, int &lastRx, bool force) {
   int req = digitalRead(PIN_MOTH_REQ);
   int busy = digitalRead(PIN_MOTH_BUSY);
-  if (!force && req == lastReq && busy == lastBusy) return;
+  int rx = digitalRead(mothUartRxPin);
+  if (!force && req == lastReq && busy == lastBusy && rx == lastRx) return;
 
-  Serial.printf("%lu ms: REQ=%d BUSY=%d UART_AVAIL=%d UART_BYTES=%lu PARTIAL=%lu\n",
+  Serial.printf("%lu ms: REQ=%d BUSY=%d UART_RX_LEVEL=%d UART_AVAIL=%d UART_BYTES=%lu PARTIAL=%lu\n",
                 (unsigned long)elapsedMs,
                 req,
                 busy,
+                rx,
                 MothSerial.available(),
                 (unsigned long)mothRxByteCount(),
                 (unsigned long)mothPartialByteCount());
   lastReq = req;
   lastBusy = busy;
+  lastRx = rx;
 }
 
 void commandWatchPins(uint32_t seconds) {
@@ -96,11 +101,12 @@ void commandWatchPins(uint32_t seconds) {
   uint32_t lastPrintMs = 0;
   int lastReq = -1;
   int lastBusy = -1;
+  int lastRx = -1;
 
   while (millis() - start < durationMs) {
     uint32_t elapsed = millis() - start;
     bool force = elapsed - lastPrintMs >= 1000;
-    printProbeSample(elapsed, lastReq, lastBusy, force);
+    printProbeSample(elapsed, lastReq, lastBusy, lastRx, force);
     if (force) lastPrintMs = elapsed;
 
     String line;
@@ -110,7 +116,7 @@ void commandWatchPins(uint32_t seconds) {
     }
   }
 
-  printProbeSample(millis() - start, lastReq, lastBusy, true);
+  printProbeSample(millis() - start, lastReq, lastBusy, lastRx, true);
   Serial.println("Watch complete.");
 }
 
@@ -127,6 +133,7 @@ void commandReqProbe(uint32_t seconds) {
   uint32_t lastPrintMs = 0;
   int lastReq = -1;
   int lastBusy = -1;
+  int lastRx = -1;
   bool sawBridge = false;
   bool sawBusyLow = !mothBusy();
   bool sawAnyLine = false;
@@ -138,7 +145,7 @@ void commandReqProbe(uint32_t seconds) {
   while (millis() - start < durationMs) {
     uint32_t elapsed = millis() - start;
     bool force = elapsed - lastPrintMs >= 1000;
-    printProbeSample(elapsed, lastReq, lastBusy, force);
+    printProbeSample(elapsed, lastReq, lastBusy, lastRx, force);
     if (force) lastPrintMs = elapsed;
     if (!mothBusy()) sawBusyLow = true;
 
@@ -176,7 +183,7 @@ void commandReqProbe(uint32_t seconds) {
 
   setRequest(false);
   delay(25);
-  printProbeSample(millis() - start, lastReq, lastBusy, true);
+  printProbeSample(millis() - start, lastReq, lastBusy, lastRx, true);
   uint32_t rawBytes = mothRxByteCount();
   uint32_t partialBytes = mothPartialByteCount();
   Serial.println();
@@ -207,6 +214,19 @@ void commandReqProbe(uint32_t seconds) {
   Serial.println("REQ probe complete.");
 }
 
+void commandSwapProbe(uint32_t seconds) {
+  bool originalSwapped = mothUartSwapped;
+
+  Serial.println("Switching ESP UART pins to SWAPPED mode for probe.");
+  configureMothUart(true);
+  printPins();
+  commandReqProbe(seconds);
+
+  Serial.println("Restoring previous UART pin mode.");
+  configureMothUart(originalSwapped);
+  printPins();
+}
+
 void handleCommand(String command) {
   command.trim();
   String lower = command;
@@ -231,6 +251,8 @@ void handleCommand(String command) {
     sendMothLine(command.substring(4));
   } else if (lower.startsWith("reqprobe")) {
     commandReqProbe(parseSecondsOrDefault(command.substring(8), 20));
+  } else if (lower.startsWith("swapprobe")) {
+    commandSwapProbe(parseSecondsOrDefault(command.substring(9), 20));
   } else if (lower.startsWith("watch")) {
     commandWatchPins(parseSecondsOrDefault(command.substring(5), 20));
   } else if (lower == "done") {
@@ -238,6 +260,12 @@ void handleCommand(String command) {
   } else if (lower == "flush") {
     flushMothInput();
     Serial.println("Flushed AudioMoth UART input.");
+  } else if (lower == "swap 1") {
+    configureMothUart(true);
+    printPins();
+  } else if (lower == "swap 0") {
+    configureMothUart(false);
+    printPins();
   } else if (lower == "req 1") {
     setRequest(true);
     printPins();
