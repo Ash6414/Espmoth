@@ -71,6 +71,8 @@ POST /v1/device/{NODE_ID}/commands/{id}/ack
 
 The ESP32 asserts ESP_REQ before attempting the UART bridge. That order matters because AudioMoth opens the UART bridge only after seeing the request pin. MOTH_BUSY is treated as an advisory pin and is read with the ESP32 internal pulldown enabled: the ESP32 waits briefly for it to fall, logs a warning if it stays high, then still listens for `OK BRIDGE_READY` and probes with `PING` for up to about 65 seconds. This keeps a noisy or stuck BUSY line from blocking a working UART bridge.
 
+`MOTH_ASSERT_REQ_AT_BOOT` is enabled so ESP_REQ goes high as soon as the ESP32 bridge pins are initialised. This gives the AudioMoth startup request-service firmware a chance to open UART before the ESP32 has finished Wi-Fi, server time sync, and command polling. The pin is driven low again before ESP32 deep sleep.
+
 Upload/delete endpoints this ESP firmware expects from the current MothServer:
 
 ```text
