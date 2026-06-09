@@ -18,5 +18,6 @@
 #define MOTH_LINE_WAIT_MS           4000
 #define READY_PROBE_INTERVAL_MS     1500
 
-// Set to 1 if you want the prototype to try opening the bridge once at boot.
+// Set to 1 if you want the prototype to run the REQ/UART probe once at boot.
 #define AUTO_PROBE_ON_BOOT          1
+#define AUTO_REQ_PROBE_SECONDS      30
