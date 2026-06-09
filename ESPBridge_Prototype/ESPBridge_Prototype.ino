@@ -45,10 +45,14 @@ void commandStatus();
 void commandList();
 void commandSetTime(const String &arg);
 void commandReqProbe(uint32_t seconds);
+void commandRxDiag(uint32_t seconds);
 void commandWatchPins(uint32_t seconds);
 void commandSwapProbe(uint32_t seconds);
 void handleCommand(String command);
 void runBootProbe();
+void startRawRxCapture();
+void stopRawRxCapture();
+bool printRawRxCaptureSummary();
 
 void setup() {
   Serial.begin(SERIAL_BAUD);
