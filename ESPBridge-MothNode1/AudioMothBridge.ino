@@ -1,6 +1,6 @@
 void initMothBridge() {
   pinMode(PIN_MOTH_REQ, OUTPUT);
-  digitalWrite(PIN_MOTH_REQ, LOW);
+  digitalWrite(PIN_MOTH_REQ, MOTH_ASSERT_REQ_AT_BOOT ? HIGH : LOW);
 
   pinMode(PIN_MOTH_BUSY, INPUT_PULLDOWN);
 
