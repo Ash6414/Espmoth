@@ -94,3 +94,21 @@ MOTH_STATUS
 ```
 
 `UPLOAD_NOW` bypasses the solar/charging requirement, but still refuses upload below `MIN_UPLOAD_BATTERY_V`.
+
+## One-command bridge test
+
+After flashing the request-service AudioMoth bin and putting AudioMoth back in CUSTOM/run mode, run:
+
+```powershell
+.\RunBridgeStatusTest.ps1
+```
+
+The script queues a `MOTH_STATUS` command in the local MothServer SQLite database, resets the ESP32 on COM7, monitors serial at 115200, and writes a log under `logs/`.
+
+Expected pass signal:
+
+```text
+Bridge READY after ...
+```
+
+If it prints `rx_bytes=0`, `busy_low_seen=0`, and `esp_req=1`, the ESP32 is asserting the request pin and sending UART pings but AudioMoth is not replying. In that case, check that AudioMoth is flashed with the request-service bin and is actually running in CUSTOM mode.
