@@ -9,6 +9,8 @@ void printHelp() {
   Serial.println("  list              Send LIST and print FILE lines");
   Serial.println("  time <epoch>      Send TIME <epoch> 0");
   Serial.println("  raw <command>     Send a raw bridge command");
+  Serial.println("  reqprobe <sec>    Hold REQ high, send PINGs, log BUSY/UART");
+  Serial.println("  watch <sec>       Log REQ/BUSY without changing pins");
   Serial.println("  done              Send DONE and deassert REQ");
   Serial.println("  req 0|1           Manually set ESP_REQ");
   Serial.println("  flush             Clear ESP UART RX buffer");
@@ -59,6 +61,107 @@ void commandSetTime(const String &arg) {
   expectOk("TIME " + epoch + " 0");
 }
 
+uint32_t parseSecondsOrDefault(const String &arg, uint32_t defaultSeconds) {
+  String value = arg;
+  value.trim();
+  if (value.length() == 0) return defaultSeconds;
+
+  uint32_t seconds = (uint32_t)value.toInt();
+  if (seconds == 0) return defaultSeconds;
+  if (seconds > 120) return 120;
+  return seconds;
+}
+
+void printProbeSample(uint32_t elapsedMs, int &lastReq, int &lastBusy, bool force) {
+  int req = digitalRead(PIN_MOTH_REQ);
+  int busy = digitalRead(PIN_MOTH_BUSY);
+  if (!force && req == lastReq && busy == lastBusy) return;
+
+  Serial.printf("%lu ms: REQ=%d BUSY=%d UART_AVAIL=%d\n",
+                (unsigned long)elapsedMs,
+                req,
+                busy,
+                MothSerial.available());
+  lastReq = req;
+  lastBusy = busy;
+}
+
+void commandWatchPins(uint32_t seconds) {
+  Serial.printf("Watching pins for %lu second(s).\n", (unsigned long)seconds);
+
+  uint32_t durationMs = seconds * 1000UL;
+  uint32_t start = millis();
+  uint32_t lastPrintMs = 0;
+  int lastReq = -1;
+  int lastBusy = -1;
+
+  while (millis() - start < durationMs) {
+    uint32_t elapsed = millis() - start;
+    bool force = elapsed - lastPrintMs >= 1000;
+    printProbeSample(elapsed, lastReq, lastBusy, force);
+    if (force) lastPrintMs = elapsed;
+
+    String line;
+    if (readMothLine(line, 10)) {
+      Serial.print("MOTH->ESP ");
+      Serial.println(line);
+    }
+  }
+
+  printProbeSample(millis() - start, lastReq, lastBusy, true);
+  Serial.println("Watch complete.");
+}
+
+void commandReqProbe(uint32_t seconds) {
+  Serial.printf("REQ probe for %lu second(s).\n", (unsigned long)seconds);
+  Serial.println("Holding ESP_REQ high, probing UART with PING.");
+
+  flushMothInput();
+  setRequest(true);
+
+  uint32_t durationMs = seconds * 1000UL;
+  uint32_t start = millis();
+  uint32_t lastPingMs = 0;
+  uint32_t lastPrintMs = 0;
+  int lastReq = -1;
+  int lastBusy = -1;
+  bool sawBridge = false;
+
+  while (millis() - start < durationMs) {
+    uint32_t elapsed = millis() - start;
+    bool force = elapsed - lastPrintMs >= 1000;
+    printProbeSample(elapsed, lastReq, lastBusy, force);
+    if (force) lastPrintMs = elapsed;
+
+    if (elapsed - lastPingMs >= READY_PROBE_INTERVAL_MS) {
+      sendMothLine("PING");
+      lastPingMs = elapsed;
+    }
+
+    String line;
+    if (readMothLine(line, 25)) {
+      Serial.print("MOTH->ESP ");
+      Serial.println(line);
+      if (line == "OK BRIDGE_READY" || line == "OK PONG") sawBridge = true;
+    }
+  }
+
+  if (sawBridge) {
+    sendMothLine("DONE");
+    String line;
+    if (readMothLine(line, MOTH_LINE_WAIT_MS)) {
+      Serial.print("MOTH->ESP ");
+      Serial.println(line);
+    }
+  }
+
+  setRequest(false);
+  delay(25);
+  printProbeSample(millis() - start, lastReq, lastBusy, true);
+  flushMothInput();
+  Serial.println("REQ probe complete.");
+}
+
 void handleCommand(String command) {
   command.trim();
   String lower = command;
@@ -81,6 +184,10 @@ void handleCommand(String command) {
   } else if (lower.startsWith("raw ")) {
     if (!bridgeOpen && !openBridge()) return;
     sendMothLine(command.substring(4));
+  } else if (lower.startsWith("reqprobe")) {
+    commandReqProbe(parseSecondsOrDefault(command.substring(8), 20));
+  } else if (lower.startsWith("watch")) {
+    commandWatchPins(parseSecondsOrDefault(command.substring(5), 20));
   } else if (lower == "done") {
     closeBridge();
   } else if (lower == "flush") {
