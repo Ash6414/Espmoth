@@ -70,6 +70,7 @@ String sha256Hex(const String &s);
 String hmacSha256Hex(const String &key, const String &message);
 String randomNonce();
 String urlEncode(const String &s);
+String pathWithoutQuery(const String &pathAndQuery);
 bool connectWiFi();
 void syncSystemClock(uint32_t epochUtc);
 uint32_t estimatedEpochUtc();
@@ -78,6 +79,7 @@ void addAuthHeaders(HTTPClient &http, const String &method, const String &path, 
 bool signedPostJson(const String &path, const String &body, long serverEpoch, String &responseOut);
 bool signedGet(const String &path, long serverEpoch, String &responseOut);
 bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut);
+bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut);
 
 // AudioMothBridge.ino
 void initMothBridge();
@@ -98,13 +100,19 @@ bool postHeartbeat(long serverEpoch, const PowerState &p, const UploadSummary &u
 bool postTimeCheck(long serverEpoch, uint32_t rttMs, const String &notes);
 void ackCommand(long serverEpoch, int commandId, const String &msg);
 void pollCommands(long serverEpoch, const PowerState &p);
-bool serverBeginFile(long serverEpoch, const MothFile &file);
-bool serverUploadChunk(long serverEpoch, const MothFile &file, const ChunkResult &chunk);
-bool serverFinishFile(long serverEpoch, const MothFile &file);
+String serverManifestId();
+String serverFilenameFromPath(const String &path);
+uint32_t serverLocalFileId(const MothFile &file);
+bool serverPostManifest(long serverEpoch, MothFile *files, size_t fileCount, String &manifestIdOut);
+bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &file, UploadSession &session);
+bool serverUploadChunk(long serverEpoch, const UploadSession &session, const ChunkResult &chunk);
+bool serverFinishFile(long serverEpoch, const UploadSession &session);
+bool serverFetchDeleteAuthorization(long serverEpoch, const String &manifestId, MothFile *files, size_t fileCount, DeleteCandidate *candidates, size_t maxCandidates, size_t &candidateCount, String &authorizationId);
+bool serverConfirmDeletes(long serverEpoch, const String &authorizationId, DeleteCandidate *candidates, size_t candidateCount);
 
 // Upload.ino
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced);
-bool uploadOneFile(long serverEpoch, const MothFile &file);
+bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &file, bool &bridgeFailure);
 bool syncMothTimeOnly(long serverEpoch);
 
 bool fetchFreshServerTimeAndSync(uint32_t *rttMsOut, long *serverEpochOut) {
@@ -165,18 +173,9 @@ void setup() {
     deepSleepMinutes(DEFAULT_SLEEP_MINUTES);
   }
 
-  bool mothTimeSynced = syncMothTimeOnly(serverEpoch);
-
-postTimeCheck(
-  serverEpoch,
-  rttMs,
-  mothTimeSynced
-    ? "ESP32 clock synced from server; AudioMoth TIME command sent successfully"
-    : "ESP32 clock synced from server; AudioMoth TIME command failed or bridge not ready"
-);
-
-postHeartbeat(serverEpoch, power, lastUpload);
-pollCommands(serverEpoch, power);
+  postTimeCheck(serverEpoch, rttMs, "ESP32 clock synced from server; AudioMoth time will be set over UART bridge when service window opens");
+  postHeartbeat(serverEpoch, power, lastUpload);
+  pollCommands(serverEpoch, power);
 
   power = readPowerState();
   if (powerAllowsUpload(power, false)) {
