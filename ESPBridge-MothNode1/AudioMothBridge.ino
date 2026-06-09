@@ -13,6 +13,14 @@ void initMothBridge() {
   while (MothSerial.available()) MothSerial.read();
 }
 
+uint32_t bridgeRawBytesRead = 0;
+uint32_t bridgeLinesRead = 0;
+
+void bridgeResetStats() {
+  bridgeRawBytesRead = 0;
+  bridgeLinesRead = 0;
+}
+
 bool mothBusy() {
   return digitalRead(PIN_MOTH_BUSY) == HIGH;
 }
@@ -41,9 +49,11 @@ bool bridgeReadLine(String &line, uint32_t timeoutMs) {
   while (millis() - start < timeoutMs) {
     while (MothSerial.available()) {
       char c = (char)MothSerial.read();
+      bridgeRawBytesRead += 1;
       if (c == '\r') continue;
       if (c == '\n') {
         if (line.length() == 0) continue;
+        bridgeLinesRead += 1;
 #if DEBUG_BRIDGE_LINES
         Serial.print("MOTH >> ");
         Serial.println(line);
@@ -63,6 +73,7 @@ bool bridgeReadBytes(uint8_t *dest, uint32_t length, uint32_t timeoutMs) {
   while (got < length && millis() - start < timeoutMs) {
     while (MothSerial.available() && got < length) {
       dest[got++] = (uint8_t)MothSerial.read();
+      bridgeRawBytesRead += 1;
       start = millis();
     }
     delay(1);
@@ -71,22 +82,57 @@ bool bridgeReadBytes(uint8_t *dest, uint32_t length, uint32_t timeoutMs) {
 }
 
 bool bridgeWaitReady(uint32_t timeoutMs) {
+  bridgeResetStats();
   String line;
   uint32_t start = millis();
   uint32_t lastPingMs = 0;
+  uint32_t pingsSent = 0;
+  bool busyLowSeen = !mothBusy();
+
   while (millis() - start < timeoutMs) {
+    if (!mothBusy()) busyLowSeen = true;
+
     if (bridgeReadLine(line, 500)) {
-      if (line == "OK BRIDGE_READY") return true;
-      if (line == "OK PONG") return true;
-      if (line.startsWith("ERR")) return false;
+      if (line == "OK BRIDGE_READY" || line == "OK PONG") {
+        Serial.printf("Bridge READY after %lu ms; pings=%lu rx_bytes=%lu rx_lines=%lu busy_low_seen=%d busy_now=%d esp_req=%d\n",
+                      (unsigned long)(millis() - start),
+                      (unsigned long)pingsSent,
+                      (unsigned long)bridgeRawBytesRead,
+                      (unsigned long)bridgeLinesRead,
+                      busyLowSeen ? 1 : 0,
+                      mothBusy() ? 1 : 0,
+                      digitalRead(PIN_MOTH_REQ));
+        return true;
+      }
+      if (line.startsWith("ERR")) {
+        Serial.printf("Bridge READY failed on AudioMoth error after %lu ms; pings=%lu rx_bytes=%lu rx_lines=%lu busy_low_seen=%d busy_now=%d esp_req=%d\n",
+                      (unsigned long)(millis() - start),
+                      (unsigned long)pingsSent,
+                      (unsigned long)bridgeRawBytesRead,
+                      (unsigned long)bridgeLinesRead,
+                      busyLowSeen ? 1 : 0,
+                      mothBusy() ? 1 : 0,
+                      digitalRead(PIN_MOTH_REQ));
+        return false;
+      }
     }
 
     uint32_t elapsed = millis() - start;
     if (elapsed - lastPingMs >= 2000) {
       bridgeSendLine("PING");
       lastPingMs = elapsed;
+      pingsSent += 1;
     }
   }
+
+  Serial.printf("Bridge READY timeout after %lu ms; pings=%lu rx_bytes=%lu rx_lines=%lu busy_low_seen=%d busy_now=%d esp_req=%d\n",
+                (unsigned long)(millis() - start),
+                (unsigned long)pingsSent,
+                (unsigned long)bridgeRawBytesRead,
+                (unsigned long)bridgeLinesRead,
+                busyLowSeen ? 1 : 0,
+                mothBusy() ? 1 : 0,
+                digitalRead(PIN_MOTH_REQ));
   return false;
 }
 
