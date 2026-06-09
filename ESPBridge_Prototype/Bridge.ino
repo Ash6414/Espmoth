@@ -3,10 +3,25 @@ void initBridgePins() {
   digitalWrite(PIN_MOTH_REQ, LOW);
 
   pinMode(PIN_MOTH_BUSY, INPUT_PULLUP);
-  pinMode(PIN_MOTH_UART_RX, INPUT_PULLUP);
+  configureMothUart(false);
+}
 
-  MothSerial.begin(MOTH_UART_BAUD, SERIAL_8N1, PIN_MOTH_UART_RX, PIN_MOTH_UART_TX);
+void configureMothUart(bool swapped) {
+  bridgeOpen = false;
+  setRequest(false);
+
+  MothSerial.end();
+  delay(20);
+
+  mothUartSwapped = swapped;
+  mothUartRxPin = swapped ? PIN_MOTH_UART_TX : PIN_MOTH_UART_RX;
+  mothUartTxPin = swapped ? PIN_MOTH_UART_RX : PIN_MOTH_UART_TX;
+
   pinMode(PIN_MOTH_UART_RX, INPUT_PULLUP);
+  pinMode(PIN_MOTH_UART_TX, INPUT_PULLUP);
+
+  MothSerial.begin(MOTH_UART_BAUD, SERIAL_8N1, mothUartRxPin, mothUartTxPin);
+  pinMode(mothUartRxPin, INPUT_PULLUP);
   flushMothInput();
 }
 
@@ -37,15 +52,17 @@ bool mothBusy() {
 }
 
 void printPins() {
-  Serial.printf("Pins: REQ_GPIO=%d BUSY_GPIO=%d UART_RX_GPIO=%d UART_TX_GPIO=%d baud=%lu\n",
+  Serial.printf("Pins: REQ_GPIO=%d BUSY_GPIO=%d UART_RX_GPIO=%d UART_TX_GPIO=%d baud=%lu mode=%s\n",
                 PIN_MOTH_REQ,
                 PIN_MOTH_BUSY,
-                PIN_MOTH_UART_RX,
-                PIN_MOTH_UART_TX,
-                (unsigned long)MOTH_UART_BAUD);
-  Serial.printf("Levels: REQ=%d BUSY=%d\n",
+                mothUartRxPin,
+                mothUartTxPin,
+                (unsigned long)MOTH_UART_BAUD,
+                mothUartSwapped ? "SWAPPED" : "NORMAL");
+  Serial.printf("Levels: REQ=%d BUSY=%d UART_RX_LEVEL=%d\n",
                 digitalRead(PIN_MOTH_REQ),
-                digitalRead(PIN_MOTH_BUSY));
+                digitalRead(PIN_MOTH_BUSY),
+                digitalRead(mothUartRxPin));
 }
 
 bool readMothLine(String &line, uint32_t timeoutMs) {
