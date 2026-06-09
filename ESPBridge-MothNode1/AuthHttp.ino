@@ -62,6 +62,11 @@ String urlEncode(const String &s) {
   return out;
 }
 
+String pathWithoutQuery(const String &pathAndQuery) {
+  int query = pathAndQuery.indexOf('?');
+  return query >= 0 ? pathAndQuery.substring(0, query) : pathAndQuery;
+}
+
 bool connectWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
@@ -131,10 +136,11 @@ long getServerTime(uint32_t *rttMsOut) {
   return doc["epoch_utc"] | 0;
 }
 
-void addAuthHeaders(HTTPClient &http, const String &method, const String &path, const uint8_t *body, size_t bodyLen, long serverEpoch) {
+void addAuthHeaders(HTTPClient &http, const String &method, const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch) {
   String ts = String(serverEpoch > 0 ? serverEpoch : (long)estimatedEpochUtc());
   String nonce = randomNonce();
   String bodyHash = sha256Hex(body, bodyLen);
+  String path = pathWithoutQuery(pathAndQuery);
   String canonical = method + "\n" + path + "\n" + ts + "\n" + nonce + "\n" + bodyHash;
   String sig = hmacSha256Hex(DEVICE_SECRET, canonical);
 
@@ -202,6 +208,27 @@ bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bo
   http.end();
 
   Serial.printf("POST(binary) %s bytes=%u -> %d\n", pathAndQuery.c_str(), (unsigned)bodyLen, code);
+#if DEBUG_HTTP_RESPONSES
+  if (responseOut.length()) Serial.println(responseOut);
+#endif
+  return code >= 200 && code < 300;
+}
+
+bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut) {
+  WiFiClient client;
+  HTTPClient http;
+  String url = String(BASE_URL) + pathAndQuery;
+  if (!http.begin(client, url)) return false;
+
+  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.addHeader("Content-Type", "application/octet-stream");
+  addAuthHeaders(http, "PUT", pathAndQuery, body, bodyLen, serverEpoch);
+
+  int code = http.sendRequest("PUT", (uint8_t *)body, bodyLen);
+  responseOut = http.getString();
+  http.end();
+
+  Serial.printf("PUT(binary) %s bytes=%u -> %d\n", pathAndQuery.c_str(), (unsigned)bodyLen, code);
 #if DEBUG_HTTP_RESPONSES
   if (responseOut.length()) Serial.println(responseOut);
 #endif
