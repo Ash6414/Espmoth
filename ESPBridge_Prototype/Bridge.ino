@@ -21,12 +21,15 @@ bool mothBusy() {
 }
 
 void printPins() {
-  Serial.printf("Pins: REQ=%d BUSY=%d UART_RX=%d UART_TX=%d baud=%lu\n",
-                digitalRead(PIN_MOTH_REQ),
-                digitalRead(PIN_MOTH_BUSY),
+  Serial.printf("Pins: REQ_GPIO=%d BUSY_GPIO=%d UART_RX_GPIO=%d UART_TX_GPIO=%d baud=%lu\n",
+                PIN_MOTH_REQ,
+                PIN_MOTH_BUSY,
                 PIN_MOTH_UART_RX,
                 PIN_MOTH_UART_TX,
                 (unsigned long)MOTH_UART_BAUD);
+  Serial.printf("Levels: REQ=%d BUSY=%d\n",
+                digitalRead(PIN_MOTH_REQ),
+                digitalRead(PIN_MOTH_BUSY));
 }
 
 bool readMothLine(String &line, uint32_t timeoutMs) {
