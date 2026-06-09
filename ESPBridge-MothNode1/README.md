@@ -69,7 +69,7 @@ GET  /v1/device/{NODE_ID}/commands
 POST /v1/device/{NODE_ID}/commands/{id}/ack
 ```
 
-The ESP32 asserts ESP_REQ before waiting for MOTH_BUSY to fall. That order matters because AudioMoth opens the UART bridge only after seeing the request pin.
+The ESP32 asserts ESP_REQ before waiting for MOTH_BUSY to fall. That order matters because AudioMoth opens the UART bridge only after seeing the request pin. The polished AudioMoth bridge sends a single `OK BRIDGE_READY` when service opens, so the ESP32 holds ESP_REQ high and keeps probing with `PING` for up to about 65 seconds before giving up.
 
 Upload/delete endpoints this ESP firmware expects from the current MothServer:
 
