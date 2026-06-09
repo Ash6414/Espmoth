@@ -11,7 +11,6 @@ void deepSleepMinutes(uint32_t minutes) {
   Serial.printf("Sleeping for %lu minute(s)\n", (unsigned long)minutes);
   Serial.flush();
 
-  bridgeDone();
   mothRequest(false);
 
   WiFi.disconnect(true);

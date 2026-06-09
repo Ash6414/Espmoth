@@ -10,24 +10,24 @@
 // ----------------------------
 // Wi-Fi and server
 // ----------------------------
-#define WIFI_SSID       "wifissid"
-#define WIFI_PASSWORD   "wifipass"
+#define WIFI_SSID       "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
 
-#define BASE_URL        "yourip"
+#define BASE_URL        "http://YOUR_SERVER_IP:8000"
 #define NODE_ID         "BATNODE_001"
 #define KEY_ID          "key-1"
-#define DEVICE_SECRET   "secret"
+#define DEVICE_SECRET   "REPLACE_WITH_64_HEX_OR_SERVER_SECRET"
 
 // Existing server endpoints from the working GPS-spoof sketch.
 #define ENDPOINT_SERVER_TIME      "/v1/public/server_time"
 #define ENDPOINT_HEARTBEAT        "/v1/device/heartbeat"
 #define ENDPOINT_TIME_CHECK       "/v1/device/time_check"
 
-// New upload endpoints. Your FastAPI server must implement these before upload will succeed.
-// The ESP will never DELETE on the AudioMoth unless all upload calls return 2xx.
-#define ENDPOINT_UPLOAD_START     "/v1/device/" NODE_ID "/upload/start"
-#define ENDPOINT_UPLOAD_CHUNK     "/v1/device/" NODE_ID "/upload/chunk"
-#define ENDPOINT_UPLOAD_FINISH    "/v1/device/" NODE_ID "/upload/finish"
+// Current MothServer upload lifecycle.
+// The ESP posts a manifest, creates an upload session per wanted file, PUTs
+// AudioMoth chunks, completes the upload, and then asks for delete authorization.
+#define ENDPOINT_FILES_MANIFEST   "/v1/files/manifest"
+#define ENDPOINT_UPLOAD_INIT      "/v1/uploads/init"
 
 // ----------------------------
 // ESP32-WROOM-U pins
@@ -68,10 +68,10 @@
 // ----------------------------
 // AudioMoth bridge protocol
 // ----------------------------
-#define MOTH_UART_BAUD               921600
+#define MOTH_UART_BAUD               115200
 #define MOTH_READY_TIMEOUT_MS        12000
 #define MOTH_LINE_TIMEOUT_MS         4000
-#define MOTH_BUSY_WAIT_MS            3000
+#define MOTH_BUSY_WAIT_MS            30000
 #define MOTH_MAX_FILES_PER_SESSION   16
 #define MOTH_CHUNK_BYTES             512
 

@@ -8,17 +8,23 @@ bool waitForMothIdle(uint32_t waitMs) {
 }
 
 bool openBridgeSession(long serverEpoch) {
-  if (!waitForMothIdle(MOTH_BUSY_WAIT_MS)) return false;
-
   bridgeFlushInput();
   mothRequest(true);
 
+  if (!waitForMothIdle(MOTH_BUSY_WAIT_MS)) {
+    Serial.println("AudioMoth did not release MOTH_BUSY after ESP_REQ");
+    mothRequest(false);
+    return false;
+  }
+
   if (!bridgeWaitReady(MOTH_READY_TIMEOUT_MS)) {
+    Serial.println("AudioMoth did not send OK BRIDGE_READY");
     mothRequest(false);
     return false;
   }
 
   if (!bridgePing()) {
+    Serial.println("AudioMoth bridge PING failed");
     bridgeDone();
     mothRequest(false);
     return false;
@@ -64,12 +70,6 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
     return summary;
   }
 
-  if (mothBusy()) {
-    summary.code = UPLOAD_SKIPPED_BUSY;
-    summary.message = "AudioMoth busy; upload skipped";
-    return summary;
-  }
-
   if (!openBridgeSession(serverEpoch)) {
     summary.code = UPLOAD_BRIDGE_FAILED;
     summary.message = "bridge session failed";
@@ -94,27 +94,57 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
     return summary;
   }
 
+  String manifestId;
+  if (!serverPostManifest(serverEpoch, files, fileCount, manifestId)) {
+    closeBridgeSession();
+    summary.code = UPLOAD_SERVER_FAILED;
+    summary.message = "manifest post failed";
+    return summary;
+  }
+
   bool anyServerFailure = false;
   bool anyBridgeFailure = false;
 
   for (size_t i = 0; i < fileCount; i++) {
     Serial.printf("Uploading %s (%lu bytes)\n", files[i].path.c_str(), (unsigned long)files[i].size);
 
-    bool ok = uploadOneFile(serverEpoch, files[i]);
+    bool bridgeFailure = false;
+    bool ok = uploadOneFile(serverEpoch, manifestId, files[i], bridgeFailure);
     if (ok) {
       summary.filesUploaded += 1;
-#if DELETE_AFTER_CONFIRMED_UPLOAD
-      if (bridgeDelete(files[i].path)) {
-        summary.filesDeleted += 1;
-      } else {
-        anyBridgeFailure = true;
-      }
-#endif
     } else {
-      anyServerFailure = true;
+      if (bridgeFailure) anyBridgeFailure = true;
+      else anyServerFailure = true;
       // Continue to next file. A failed file is never deleted.
     }
   }
+
+#if DELETE_AFTER_CONFIRMED_UPLOAD
+  if (summary.filesUploaded > 0) {
+    DeleteCandidate deletes[MOTH_MAX_FILES_PER_SESSION];
+    size_t deleteCount = 0;
+    String authorizationId;
+
+    if (serverFetchDeleteAuthorization(serverEpoch, manifestId, files, fileCount, deletes, MOTH_MAX_FILES_PER_SESSION, deleteCount, authorizationId)) {
+      for (size_t i = 0; i < deleteCount; i++) {
+        if (bridgeDelete(deletes[i].path)) {
+          deletes[i].deleted = true;
+          summary.filesDeleted += 1;
+        } else {
+          deletes[i].deleted = false;
+          deletes[i].error = "AudioMoth DELETE failed";
+          anyBridgeFailure = true;
+        }
+      }
+
+      if (deleteCount > 0 && !serverConfirmDeletes(serverEpoch, authorizationId, deletes, deleteCount)) {
+        anyServerFailure = true;
+      }
+    } else {
+      anyServerFailure = true;
+    }
+  }
+#endif
 
   closeBridgeSession();
 
@@ -132,27 +162,35 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   return summary;
 }
 
-bool uploadOneFile(long serverEpoch, const MothFile &file) {
+bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &file, bool &bridgeFailure) {
+  bridgeFailure = false;
   if (file.size == 0) return false;
 
-  if (!serverBeginFile(serverEpoch, file)) {
-    Serial.println("serverBeginFile failed");
+  UploadSession session;
+  if (!serverInitFile(serverEpoch, manifestId, file, session)) {
+    Serial.println("serverInitFile failed");
     return false;
+  }
+
+  if (session.alreadyComplete) {
+    Serial.printf("Server already has %s\n", file.path.c_str());
+    return true;
   }
 
   uint32_t offset = 0;
   while (offset < file.size) {
     uint32_t remaining = file.size - offset;
-    uint32_t requestBytes = remaining > MOTH_CHUNK_BYTES ? MOTH_CHUNK_BYTES : remaining;
+    uint32_t requestBytes = remaining > session.chunkSize ? session.chunkSize : remaining;
 
     ChunkResult chunk;
     bool gotChunk = bridgeGetChunk(file.path, offset, requestBytes, chunk);
-    if (!gotChunk || !chunk.ok || chunk.length == 0) {
+    if (!gotChunk || !chunk.ok || chunk.length == 0 || chunk.length != requestBytes) {
       Serial.printf("GET failed at offset %lu\n", (unsigned long)offset);
+      bridgeFailure = true;
       return false;
     }
 
-    if (!serverUploadChunk(serverEpoch, file, chunk)) {
+    if (!serverUploadChunk(serverEpoch, session, chunk)) {
       Serial.printf("serverUploadChunk failed at offset %lu\n", (unsigned long)offset);
       return false;
     }
@@ -169,7 +207,7 @@ bool uploadOneFile(long serverEpoch, const MothFile &file) {
     }
   }
 
-  if (!serverFinishFile(serverEpoch, file)) {
+  if (!serverFinishFile(serverEpoch, session)) {
     Serial.println("serverFinishFile failed");
     return false;
   }

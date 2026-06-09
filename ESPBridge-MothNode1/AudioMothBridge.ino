@@ -68,10 +68,18 @@ bool bridgeReadBytes(uint8_t *dest, uint32_t length, uint32_t timeoutMs) {
 bool bridgeWaitReady(uint32_t timeoutMs) {
   String line;
   uint32_t start = millis();
+  uint32_t lastPingMs = 0;
   while (millis() - start < timeoutMs) {
     if (bridgeReadLine(line, 500)) {
       if (line == "OK BRIDGE_READY") return true;
+      if (line == "OK PONG") return true;
       if (line.startsWith("ERR")) return false;
+    }
+
+    uint32_t elapsed = millis() - start;
+    if (elapsed - lastPingMs >= 2000) {
+      bridgeSendLine("PING");
+      lastPingMs = elapsed;
     }
   }
   return false;
@@ -122,6 +130,7 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut) {
       if (countOut < maxFiles) {
         files[countOut].path = path;
         files[countOut].size = size;
+        files[countOut].localFileId = 0;
         countOut += 1;
       }
     }
