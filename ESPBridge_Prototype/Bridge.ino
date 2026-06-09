@@ -21,7 +21,6 @@ void configureMothUart(bool swapped) {
   pinMode(PIN_MOTH_UART_TX, INPUT_PULLUP);
 
   MothSerial.begin(MOTH_UART_BAUD, SERIAL_8N1, mothUartRxPin, mothUartTxPin);
-  pinMode(mothUartRxPin, INPUT_PULLUP);
   flushMothInput();
 }
 
