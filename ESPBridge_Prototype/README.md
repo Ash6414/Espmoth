@@ -31,5 +31,20 @@ Open the ESP32 serial monitor at `115200`.
 - `done`: send `DONE` and deassert `ESP_REQ`
 - `pins`: print REQ/BUSY/UART settings
 - `raw <command>`: send any raw bridge command
+- `reqprobe <seconds>`: hold `ESP_REQ` high, send repeated `PING`, and log `REQ`, `BUSY`, and every UART line
+- `watch <seconds>`: log `REQ`, `BUSY`, and incoming UART without changing pins
 
 By default the sketch runs one boot probe: `open`, `PING`, `STATUS`, `DONE`.
+
+## Bring-Up Sequence
+
+1. Flash this sketch to the ESP32.
+2. Open serial monitor at `115200`.
+3. Put AudioMoth in `CUSTOM`.
+4. Run `reqprobe 30`.
+
+Expected signs of life:
+
+- `BUSY` changes from `1` to `0` after `REQ` goes high.
+- AudioMoth sends `OK BRIDGE_READY` or `OK PONG`.
+- If `BUSY=0` but no `OK BRIDGE_READY` or `OK PONG`, the AudioMoth firmware is not entering the bridge service loop.
