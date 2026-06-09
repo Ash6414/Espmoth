@@ -17,10 +17,15 @@ HardwareSerial MothSerial(2);
 
 bool bridgeOpen = false;
 String serialCommand;
+String mothLineBuffer;
+uint32_t mothRxBytesSeen = 0;
 
 void printHelp();
 void printPins();
 void initBridgePins();
+void resetMothParser();
+uint32_t mothRxByteCount();
+uint32_t mothPartialByteCount();
 void flushMothInput();
 void setRequest(bool state);
 bool mothBusy();
