@@ -102,9 +102,11 @@ void commandWatchPins(uint32_t seconds) {
   int lastReq = -1;
   int lastBusy = -1;
   int lastRx = -1;
+  ProbeEdges edges;
 
   while (millis() - start < durationMs) {
     uint32_t elapsed = millis() - start;
+    updateProbeEdges(edges, elapsed);
     bool force = elapsed - lastPrintMs >= 1000;
     printProbeSample(elapsed, lastReq, lastBusy, lastRx, force);
     if (force) lastPrintMs = elapsed;
@@ -117,6 +119,11 @@ void commandWatchPins(uint32_t seconds) {
   }
 
   printProbeSample(millis() - start, lastReq, lastBusy, lastRx, true);
+  Serial.printf("Edge summary: BUSY rising=%lu falling=%lu UART_RX rising=%lu falling=%lu\n",
+                (unsigned long)edges.busyRising,
+                (unsigned long)edges.busyFalling,
+                (unsigned long)edges.rxRising,
+                (unsigned long)edges.rxFalling);
   Serial.println("Watch complete.");
 }
 
@@ -141,9 +148,11 @@ void commandReqProbe(uint32_t seconds) {
   bool sawPong = false;
   uint32_t lineCount = 0;
   uint32_t pingCount = 0;
+  ProbeEdges edges;
 
   while (millis() - start < durationMs) {
     uint32_t elapsed = millis() - start;
+    updateProbeEdges(edges, elapsed);
     bool force = elapsed - lastPrintMs >= 1000;
     printProbeSample(elapsed, lastReq, lastBusy, lastRx, force);
     if (force) lastPrintMs = elapsed;
@@ -170,6 +179,8 @@ void commandReqProbe(uint32_t seconds) {
         sawPong = true;
       }
     }
+
+    updateProbeEdges(edges, millis() - start);
   }
 
   if (sawBridge) {
@@ -193,6 +204,12 @@ void commandReqProbe(uint32_t seconds) {
   Serial.printf("  UART lines received: %lu\n", (unsigned long)lineCount);
   Serial.printf("  Partial UART bytes buffered: %lu\n", (unsigned long)partialBytes);
   Serial.printf("  BUSY low observed: %s\n", sawBusyLow ? "YES" : "NO");
+  Serial.printf("  BUSY edges: rising=%lu falling=%lu\n",
+                (unsigned long)edges.busyRising,
+                (unsigned long)edges.busyFalling);
+  Serial.printf("  UART_RX edges: rising=%lu falling=%lu\n",
+                (unsigned long)edges.rxRising,
+                (unsigned long)edges.rxFalling);
   Serial.printf("  READY observed: %s\n", sawReady ? "YES" : "NO");
   Serial.printf("  PONG observed: %s\n", sawPong ? "YES" : "NO");
 
@@ -203,6 +220,10 @@ void commandReqProbe(uint32_t seconds) {
   } else if (!sawAnyLine) {
     if (rawBytes > 0) {
       Serial.println("RESULT: FAIL UART bytes arrived, but no newline-terminated AudioMoth bridge line was received.");
+    } else if (edges.rxRising > 0 || edges.rxFalling > 0) {
+      Serial.println("RESULT: FAIL B9 GPIO pulse reached ESP RX, but no UART bytes decoded.");
+    } else if (edges.busyRising > 0 || edges.busyFalling > 0) {
+      Serial.println("RESULT: FAIL AudioMoth entered bridge service, but B9/UART did not reach ESP RX.");
     } else {
       Serial.println("RESULT: FAIL MOTH_BUSY went low, but no AudioMoth UART response was received.");
     }
