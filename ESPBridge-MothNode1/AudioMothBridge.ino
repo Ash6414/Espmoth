@@ -122,6 +122,7 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut) {
       if (countOut < maxFiles) {
         files[countOut].path = path;
         files[countOut].size = size;
+        files[countOut].localFileId = 0;
         countOut += 1;
       }
     }
