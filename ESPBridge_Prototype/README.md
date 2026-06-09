@@ -49,3 +49,4 @@ Expected signs of life:
 - AudioMoth sends `OK BRIDGE_READY` or `OK PONG`.
 - The probe ends with `RESULT: PASS basic ESP32 <-> AudioMoth bridge communication detected.`
 - If `BUSY=0` but no `OK BRIDGE_READY` or `OK PONG`, the AudioMoth firmware is not entering the bridge service loop.
+- If `UART_BYTES` rises but `UART lines received` stays `0`, the ESP32 is seeing bytes that are not valid newline-terminated bridge text. That usually points to a baud/path/pin-level problem or a floating UART RX line.
