@@ -48,7 +48,15 @@ print(cur.lastrowid)
 conn.close()
 "@
 
-$commandId = (& $pythonPath -c $queueScript $dbPath $NodeId $CommandType).Trim()
+$queueScriptPath = Join-Path $logDir "queue-bridge-command-$stamp.py"
+$queueScript | Set-Content -LiteralPath $queueScriptPath -Encoding UTF8
+
+try {
+  $commandId = (& $pythonPath $queueScriptPath $dbPath $NodeId $CommandType).Trim()
+} finally {
+  Remove-Item -LiteralPath $queueScriptPath -Force -ErrorAction SilentlyContinue
+}
+
 if (!$commandId) {
   throw "Failed to queue $CommandType command"
 }
