@@ -34,14 +34,14 @@ Open the ESP32 serial monitor at `115200`.
 - `reqprobe <seconds>`: hold `ESP_REQ` high, send repeated `PING`, and log `REQ`, `BUSY`, and every UART line
 - `watch <seconds>`: log `REQ`, `BUSY`, and incoming UART without changing pins
 
-By default the sketch runs one boot probe: `open`, `PING`, `STATUS`, `DONE`.
+By default the sketch runs one boot probe equivalent to `reqprobe 30`.
 
 ## Bring-Up Sequence
 
 1. Flash this sketch to the ESP32.
 2. Open serial monitor at `115200`.
 3. Put AudioMoth in `CUSTOM`.
-4. Run `reqprobe 30`.
+4. Reset the ESP32, or run `reqprobe 30` manually.
 
 Expected signs of life:
 
