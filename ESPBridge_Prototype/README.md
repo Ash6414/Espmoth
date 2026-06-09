@@ -12,12 +12,12 @@ This is a clean ESP32 bring-up sketch for the AudioMoth ESPBridge. It is deliber
 
 ## AudioMoth Setup
 
-- Flash the AudioMoth ESPBridge firmware.
+- Flash an AudioMoth ESPBridge build that includes the BUSY-low service hook from `Ash6414/AudioMoth-Firmware_ESPnode` PR #1.
 - Put the AudioMoth switch in `CUSTOM`.
 - Disable GPS time setting, because `a7/a8` are used for bridge handshake.
 - Baud is `115200` on both sides.
 
-The AudioMoth firmware only calls `ESPBridge_serviceUntil()` from the Custom-mode safe service window. If the ESP sees `BUSY=0` but never receives `OK BRIDGE_READY` or `OK PONG`, first check the switch is in `CUSTOM`.
+The AudioMoth firmware must both report `AudioMoth-Firmware-Basic` for Configurator compatibility and include the ESPBridge service-window fix. An older binary can have the Basic name and bridge strings but still fail this probe if it does not enter `ESPBridge_serviceUntil()` when `MOTH_BUSY` drops.
 
 ## Serial Commands
 
@@ -34,17 +34,18 @@ Open the ESP32 serial monitor at `115200`.
 - `reqprobe <seconds>`: hold `ESP_REQ` high, send repeated `PING`, and log `REQ`, `BUSY`, and every UART line
 - `watch <seconds>`: log `REQ`, `BUSY`, and incoming UART without changing pins
 
-By default the sketch runs one boot probe: `open`, `PING`, `STATUS`, `DONE`.
+By default the sketch runs one boot probe equivalent to `reqprobe 30`.
 
 ## Bring-Up Sequence
 
 1. Flash this sketch to the ESP32.
 2. Open serial monitor at `115200`.
 3. Put AudioMoth in `CUSTOM`.
-4. Run `reqprobe 30`.
+4. Reset the ESP32, or run `reqprobe 30` manually.
 
 Expected signs of life:
 
 - `BUSY` changes from `1` to `0` after `REQ` goes high.
 - AudioMoth sends `OK BRIDGE_READY` or `OK PONG`.
+- The probe ends with `RESULT: PASS basic ESP32 <-> AudioMoth bridge communication detected.`
 - If `BUSY=0` but no `OK BRIDGE_READY` or `OK PONG`, the AudioMoth firmware is not entering the bridge service loop.
