@@ -10,7 +10,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Talks to AudioMoth over UART at 115200 baud.
+- Talks to AudioMoth over UART at 9600 baud.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -41,6 +41,8 @@ Disable GPS time setting in the AudioMoth configuration. This firmware does not 
 ```text
 TIME <unix_seconds> <milliseconds>
 ```
+
+The ESP32 UART setup must leave GPIO16/GPIO17 owned by `Serial2` after `Serial2.begin(...)`. Do not call `pinMode()` on either UART pin after `begin()`, or the ESP32 pin matrix can detach RX2 and the bridge will see GPIO edges but decode zero UART bytes.
 
 ## Arduino setup
 
