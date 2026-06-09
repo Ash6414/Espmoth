@@ -71,7 +71,7 @@
 #define MOTH_UART_BAUD               9600
 #define MOTH_READY_TIMEOUT_MS        65000
 #define MOTH_LINE_TIMEOUT_MS         4000
-#define MOTH_BUSY_WAIT_MS            65000
+#define MOTH_BUSY_WAIT_MS            5000
 #define MOTH_MAX_FILES_PER_SESSION   16
 #define MOTH_CHUNK_BYTES             512
 
