@@ -77,11 +77,13 @@ void printProbeSample(uint32_t elapsedMs, int &lastReq, int &lastBusy, bool forc
   int busy = digitalRead(PIN_MOTH_BUSY);
   if (!force && req == lastReq && busy == lastBusy) return;
 
-  Serial.printf("%lu ms: REQ=%d BUSY=%d UART_AVAIL=%d\n",
+  Serial.printf("%lu ms: REQ=%d BUSY=%d UART_AVAIL=%d UART_BYTES=%lu PARTIAL=%lu\n",
                 (unsigned long)elapsedMs,
                 req,
                 busy,
-                MothSerial.available());
+                MothSerial.available(),
+                (unsigned long)mothRxByteCount(),
+                (unsigned long)mothPartialByteCount());
   lastReq = req;
   lastBusy = busy;
 }
@@ -175,11 +177,14 @@ void commandReqProbe(uint32_t seconds) {
   setRequest(false);
   delay(25);
   printProbeSample(millis() - start, lastReq, lastBusy, true);
-  flushMothInput();
+  uint32_t rawBytes = mothRxByteCount();
+  uint32_t partialBytes = mothPartialByteCount();
   Serial.println();
   Serial.println("REQ probe summary:");
   Serial.printf("  PINGs sent: %lu\n", (unsigned long)pingCount);
+  Serial.printf("  Raw UART bytes received: %lu\n", (unsigned long)rawBytes);
   Serial.printf("  UART lines received: %lu\n", (unsigned long)lineCount);
+  Serial.printf("  Partial UART bytes buffered: %lu\n", (unsigned long)partialBytes);
   Serial.printf("  BUSY low observed: %s\n", sawBusyLow ? "YES" : "NO");
   Serial.printf("  READY observed: %s\n", sawReady ? "YES" : "NO");
   Serial.printf("  PONG observed: %s\n", sawPong ? "YES" : "NO");
@@ -189,11 +194,16 @@ void commandReqProbe(uint32_t seconds) {
   } else if (!sawBusyLow) {
     Serial.println("RESULT: FAIL MOTH_BUSY never went low while ESP_REQ was high.");
   } else if (!sawAnyLine) {
-    Serial.println("RESULT: FAIL MOTH_BUSY went low, but no AudioMoth UART response was received.");
+    if (rawBytes > 0) {
+      Serial.println("RESULT: FAIL UART bytes arrived, but no newline-terminated AudioMoth bridge line was received.");
+    } else {
+      Serial.println("RESULT: FAIL MOTH_BUSY went low, but no AudioMoth UART response was received.");
+    }
   } else {
     Serial.println("RESULT: FAIL UART responded, but no OK BRIDGE_READY or OK PONG was observed.");
   }
 
+  flushMothInput();
   Serial.println("REQ probe complete.");
 }
 
