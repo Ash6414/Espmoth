@@ -2,7 +2,7 @@ param(
   [string]$Port = "COM7",
   [int]$Baud = 115200,
   [string]$NodeId = "BATNODE_001",
-  [int]$MonitorSeconds = 120,
+  [int]$MonitorSeconds = 180,
   [string]$CommandType = "MOTH_STATUS"
 )
 
