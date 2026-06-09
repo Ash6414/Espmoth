@@ -8,17 +8,23 @@ bool waitForMothIdle(uint32_t waitMs) {
 }
 
 bool openBridgeSession(long serverEpoch) {
-  if (!waitForMothIdle(MOTH_BUSY_WAIT_MS)) return false;
-
   bridgeFlushInput();
   mothRequest(true);
 
+  if (!waitForMothIdle(MOTH_BUSY_WAIT_MS)) {
+    Serial.println("AudioMoth did not release MOTH_BUSY after ESP_REQ");
+    mothRequest(false);
+    return false;
+  }
+
   if (!bridgeWaitReady(MOTH_READY_TIMEOUT_MS)) {
+    Serial.println("AudioMoth did not send OK BRIDGE_READY");
     mothRequest(false);
     return false;
   }
 
   if (!bridgePing()) {
+    Serial.println("AudioMoth bridge PING failed");
     bridgeDone();
     mothRequest(false);
     return false;
