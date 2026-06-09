@@ -2,14 +2,30 @@ void initBridgePins() {
   pinMode(PIN_MOTH_REQ, OUTPUT);
   digitalWrite(PIN_MOTH_REQ, LOW);
 
-  pinMode(PIN_MOTH_BUSY, INPUT);
+  pinMode(PIN_MOTH_BUSY, INPUT_PULLUP);
+  pinMode(PIN_MOTH_UART_RX, INPUT_PULLUP);
 
   MothSerial.begin(MOTH_UART_BAUD, SERIAL_8N1, PIN_MOTH_UART_RX, PIN_MOTH_UART_TX);
+  pinMode(PIN_MOTH_UART_RX, INPUT_PULLUP);
   flushMothInput();
+}
+
+void resetMothParser() {
+  mothLineBuffer = "";
+  mothRxBytesSeen = 0;
+}
+
+uint32_t mothRxByteCount() {
+  return mothRxBytesSeen;
+}
+
+uint32_t mothPartialByteCount() {
+  return mothLineBuffer.length();
 }
 
 void flushMothInput() {
   while (MothSerial.available()) MothSerial.read();
+  resetMothParser();
 }
 
 void setRequest(bool state) {
@@ -39,12 +55,15 @@ bool readMothLine(String &line, uint32_t timeoutMs) {
   while (millis() - start < timeoutMs) {
     while (MothSerial.available()) {
       char c = (char)MothSerial.read();
+      mothRxBytesSeen += 1;
       if (c == '\r') continue;
       if (c == '\n') {
-        if (line.length() == 0) continue;
+        if (mothLineBuffer.length() == 0) continue;
+        line = mothLineBuffer;
+        mothLineBuffer = "";
         return true;
       }
-      if (line.length() < 220) line += c;
+      if (mothLineBuffer.length() < 220) mothLineBuffer += c;
     }
     delay(1);
   }
