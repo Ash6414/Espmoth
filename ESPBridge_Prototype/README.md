@@ -12,7 +12,7 @@ This is a clean ESP32 bring-up sketch for the AudioMoth ESPBridge. It is deliber
 
 ## AudioMoth Setup
 
-- Flash an AudioMoth ESPBridge build that includes the BUSY-low service hook from `Ash6414/AudioMoth-Firmware_ESPnode` PR #1.
+- Flash an AudioMoth ESPBridge build from `Ash6414/AudioMoth-Firmware_ESPnode` PR #2.
 - Put the AudioMoth switch in `CUSTOM`.
 - Disable GPS time setting, because `a7/a8` are used for bridge handshake.
 - Baud is `115200` on both sides.
