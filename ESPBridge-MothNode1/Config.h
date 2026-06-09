@@ -10,10 +10,10 @@
 // ----------------------------
 // Wi-Fi and server
 // ----------------------------
-#define WIFI_SSID       "REPLACE_WITH_WIFI_SSID"
-#define WIFI_PASSWORD   "REPLACE_WITH_WIFI_PASSWORD"
+#define WIFI_SSID       "YOUR_WIFI_SSID"
+#define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
 
-#define BASE_URL        "http://192.168.0.207:8000"
+#define BASE_URL        "http://YOUR_SERVER_IP:8000"
 #define NODE_ID         "BATNODE_001"
 #define KEY_ID          "key-1"
 #define DEVICE_SECRET   "REPLACE_WITH_64_HEX_OR_SERVER_SECRET"
@@ -68,10 +68,10 @@
 // ----------------------------
 // AudioMoth bridge protocol
 // ----------------------------
-#define MOTH_UART_BAUD               921600
+#define MOTH_UART_BAUD               115200
 #define MOTH_READY_TIMEOUT_MS        12000
 #define MOTH_LINE_TIMEOUT_MS         4000
-#define MOTH_BUSY_WAIT_MS            3000
+#define MOTH_BUSY_WAIT_MS            30000
 #define MOTH_MAX_FILES_PER_SESSION   16
 #define MOTH_CHUNK_BYTES             512
 
