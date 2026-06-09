@@ -207,13 +207,6 @@ void handleCommand(String command) {
 void runBootProbe() {
   Serial.println();
   Serial.println("Boot probe starting.");
-  if (!openBridge()) {
-    Serial.println("Boot probe failed.");
-    return;
-  }
-
-  expectOk("PING");
-  commandStatus();
-  closeBridge();
+  commandReqProbe(AUTO_REQ_PROBE_SECONDS);
   Serial.println("Boot probe complete.");
 }
