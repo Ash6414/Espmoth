@@ -162,6 +162,7 @@ void setup() {
   Serial.printf("Battery: %.3f V, %.1f%%, CHRG=%d, DONE=%d\n",
                 power.batteryV, power.batteryPercent, power.charging, power.chargeDone);
   Serial.printf("MOTH_BUSY=%d\n", mothBusy());
+  Serial.printf("ESP_REQ=%d\n", digitalRead(PIN_MOTH_REQ));
 
   if (!powerAllowsWiFi(power)) {
     lastUpload = {UPLOAD_SKIPPED_POWER, 0, 0, 0, "battery below Wi-Fi threshold"};
