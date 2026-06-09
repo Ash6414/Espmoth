@@ -111,6 +111,8 @@ bool serverFetchDeleteAuthorization(long serverEpoch, const String &manifestId, 
 bool serverConfirmDeletes(long serverEpoch, const String &authorizationId, DeleteCandidate *candidates, size_t candidateCount);
 
 // Upload.ino
+bool openBridgeSession(long serverEpoch);
+void closeBridgeSession();
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced);
 bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &file, bool &bridgeFailure);
 bool syncMothTimeOnly(long serverEpoch);
