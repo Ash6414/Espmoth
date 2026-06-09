@@ -34,6 +34,8 @@ bool expectOk(const String &command, String *responseOut = nullptr);
 void commandStatus();
 void commandList();
 void commandSetTime(const String &arg);
+void commandReqProbe(uint32_t seconds);
+void commandWatchPins(uint32_t seconds);
 void handleCommand(String command);
 void runBootProbe();
 
