@@ -47,4 +47,5 @@ Expected signs of life:
 
 - `BUSY` changes from `1` to `0` after `REQ` goes high.
 - AudioMoth sends `OK BRIDGE_READY` or `OK PONG`.
+- The probe ends with `RESULT: PASS basic ESP32 <-> AudioMoth bridge communication detected.`
 - If `BUSY=0` but no `OK BRIDGE_READY` or `OK PONG`, the AudioMoth firmware is not entering the bridge service loop.
