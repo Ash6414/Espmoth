@@ -67,15 +67,18 @@ GET  /v1/device/{NODE_ID}/commands
 POST /v1/device/{NODE_ID}/commands/{id}/ack
 ```
 
-New endpoints this ESP firmware expects:
+Upload/delete endpoints this ESP firmware expects from the current MothServer:
 
 ```text
-POST /v1/device/{NODE_ID}/upload/start
-POST /v1/device/{NODE_ID}/upload/chunk?node_id=...&path=...&offset=...&length=...&total=...&crc32=...
-POST /v1/device/{NODE_ID}/upload/finish
+POST /v1/files/manifest
+POST /v1/uploads/init
+PUT  /v1/uploads/{upload_id}/chunks/{chunk_index}
+POST /v1/uploads/{upload_id}/complete
+GET  /v1/nodes/{NODE_ID}/delete_authorization?manifest_id=...
+POST /v1/nodes/{NODE_ID}/delete_confirm
 ```
 
-The chunk endpoint receives raw `application/octet-stream` bytes. The ESP signs the full path including query string.
+The chunk endpoint receives raw `application/octet-stream` bytes. The ESP asks the server to use the AudioMoth bridge chunk size (`MOTH_CHUNK_BYTES`, currently 512 bytes), so each UART `GET` payload maps directly to one server chunk. The ESP signs only the URL path because MothServer authenticates `request.url.path`.
 
 ## Command types supported
 
