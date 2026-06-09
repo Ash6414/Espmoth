@@ -1,10 +1,10 @@
 /*
-  AudioMoth ESPBridge Diagnostic Sketch
+  AudioMoth ESPBridge Diagnostic Sketch - Option A
 
   Purpose:
   - Verifies the ESP32 <-> AudioMoth bridge electrically and logically without the server.
-  - Uses the corrected bridge session order: assert ESP_REQ first, then wait for MOTH_BUSY to clear.
-  - Sends ASCII bridge protocol commands only after AudioMoth reports OK BRIDGE_READY.
+  - Option A only: dedicated ESPBridge. GPS spoofing/PPS/NMEA are disabled.
+  - Uses a7 as ESP_REQ and a8 as MOTH_BUSY. Do not run this against GPS-spoof firmware.
 
   Wiring:
     ESP32 GPIO16 RX2  <- AudioMoth b9 UART TX
@@ -18,10 +18,12 @@
   Serial Monitor:
     115200 baud
 
-  Commands typed into Serial Monitor:
+  Commands:
+    open
     ping
     status
     time 1781015124
+    list
     done
     test 1781015124
 
@@ -97,8 +99,9 @@ bool bridgeReadLine(String &line, uint32_t timeoutMs) {
         return true;
       }
 
-      // The bridge protocol is ASCII. If we see binary residue, discard the
-      // partial line instead of treating garbage as a bridge response.
+      // Bridge command responses are ASCII. Binary bytes can appear only after
+      // a DATA header. The diagnostic does not request DATA payloads, so discard
+      // non-ASCII residue instead of accepting garbage as a response line.
       if (!isBridgePrintable(c)) {
         Serial.printf("MOTH >> [discarded non-ASCII byte 0x%02X]\n", static_cast<uint8_t>(c));
         line = "";
@@ -130,6 +133,7 @@ bool bridgeWaitReady(uint32_t timeoutMs) {
   while (millis() - start < timeoutMs) {
     if (bridgeReadLine(line, 500)) {
       if (line == "OK BRIDGE_READY") return true;
+      if (line.startsWith("OK BRIDGE_SLEEP")) continue;
       if (line.startsWith("ERR")) return false;
     }
   }
@@ -137,7 +141,7 @@ bool bridgeWaitReady(uint32_t timeoutMs) {
   return false;
 }
 
-bool bridgeExpectOk(const String &cmd, String *responseOut = nullptr) {
+bool bridgeExpectLine(const String &cmd, String *responseOut = nullptr) {
   bridgeSendLine(cmd);
 
   String line;
@@ -146,6 +150,13 @@ bool bridgeExpectOk(const String &cmd, String *responseOut = nullptr) {
     return false;
   }
 
+  if (responseOut) *responseOut = line;
+  return true;
+}
+
+bool bridgeExpectOk(const String &cmd, String *responseOut = nullptr) {
+  String line;
+  if (!bridgeExpectLine(cmd, &line)) return false;
   if (responseOut) *responseOut = line;
   return line.startsWith("OK");
 }
@@ -157,15 +168,16 @@ bool openBridgeSession() {
   Serial.println("Opening bridge session...");
   Serial.printf("Initial MOTH_BUSY=%d\n", mothBusy() ? 1 : 0);
 
-  // Correct order: assert request first. AudioMoth only enters the bridge
-  // service window when ESP_REQ is active.
+  // Flush only before asserting ESP_REQ. AudioMoth sends OK BRIDGE_READY
+  // immediately after it enters ESPBridge_serviceUntil(); flushing after
+  // MOTH_BUSY drops can erase the only READY line.
   bridgeFlushInput();
   mothRequest(true);
   delay(20);
 
   Serial.printf("ESP_REQ=1, MOTH_BUSY=%d\n", mothBusy() ? 1 : 0);
 
-  if (!waitForMothIdle(MOTH_BUSY_WAIT_MS)) {
+  if (mothBusy() && !waitForMothIdle(MOTH_BUSY_WAIT_MS)) {
     Serial.println("FAIL: MOTH_BUSY stayed high after ESP_REQ.");
     mothRequest(false);
     bridgeFlushInput();
@@ -173,7 +185,6 @@ bool openBridgeSession() {
   }
 
   Serial.println("MOTH_BUSY is low; waiting for OK BRIDGE_READY...");
-  bridgeFlushInput();
 
   if (!bridgeWaitReady(MOTH_READY_TIMEOUT_MS)) {
     Serial.println("FAIL: AudioMoth did not send OK BRIDGE_READY.");
@@ -189,9 +200,6 @@ bool openBridgeSession() {
 void closeBridgeSession() {
   if (bridgeOpen) {
     (void)bridgeExpectOk("DONE");
-  } else {
-    bridgeSendLine("DONE");
-    delay(20);
   }
 
   bridgeFlushInput();
@@ -217,6 +225,31 @@ bool bridgeStatus() {
 bool bridgeSetTime(uint32_t epoch) {
   String cmd = "TIME " + String(epoch) + " 0";
   return bridgeExpectOk(cmd);
+}
+
+bool bridgeList() {
+  bridgeSendLine("LIST");
+
+  bool ok = false;
+  String line;
+  uint32_t start = millis();
+
+  while (millis() - start < 15000) {
+    if (!bridgeReadLine(line, 1000)) continue;
+
+    if (line == "END") return ok;
+    if (line.startsWith("FILE ")) {
+      ok = true;
+      continue;
+    }
+    if (line.startsWith("ERR ")) {
+      Serial.println("LIST failed. This is expected if AudioMoth uploadAllowed=0.");
+      return false;
+    }
+  }
+
+  Serial.println("LIST timeout.");
+  return false;
 }
 
 bool runFullTest(uint32_t epoch) {
@@ -256,6 +289,7 @@ void printHelp() {
   Serial.println("  ping");
   Serial.println("  status");
   Serial.println("  time <epoch>");
+  Serial.println("  list");
   Serial.println("  done");
   Serial.println("  test <epoch>");
   Serial.println();
@@ -274,7 +308,8 @@ void setup() {
   bridgeFlushInput();
 
   Serial.println();
-  Serial.println("AudioMoth ESPBridge Diagnostic");
+  Serial.println("AudioMoth ESPBridge Diagnostic - Option A");
+  Serial.println("GPS spoofing is not used. a7=ESP_REQ, a8=MOTH_BUSY.");
   Serial.printf("UART baud: %lu\n", static_cast<unsigned long>(MOTH_UART_BAUD));
   Serial.printf("Pins: RX=%d TX=%d REQ=%d BUSY=%d\n", PIN_MOTH_UART_RX, PIN_MOTH_UART_TX, PIN_MOTH_REQ, PIN_MOTH_BUSY);
   Serial.printf("MOTH_BUSY=%d\n", mothBusy() ? 1 : 0);
@@ -299,6 +334,9 @@ void loop() {
     uint32_t epoch = static_cast<uint32_t>(strtoul(cmd.substring(5).c_str(), nullptr, 10));
     if (!bridgeOpen && !openBridgeSession()) return;
     Serial.println(bridgeSetTime(epoch) ? "TIME OK" : "TIME FAILED");
+  } else if (cmd == "list") {
+    if (!bridgeOpen && !openBridgeSession()) return;
+    Serial.println(bridgeList() ? "LIST OK" : "LIST FAILED");
   } else if (cmd == "done") {
     closeBridgeSession();
   } else if (cmd.startsWith("test ")) {
