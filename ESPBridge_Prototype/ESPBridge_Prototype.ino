@@ -16,13 +16,17 @@
 HardwareSerial MothSerial(2);
 
 bool bridgeOpen = false;
+bool mothUartSwapped = false;
 String serialCommand;
 String mothLineBuffer;
 uint32_t mothRxBytesSeen = 0;
+int mothUartRxPin = PIN_MOTH_UART_RX;
+int mothUartTxPin = PIN_MOTH_UART_TX;
 
 void printHelp();
 void printPins();
 void initBridgePins();
+void configureMothUart(bool swapped);
 void resetMothParser();
 uint32_t mothRxByteCount();
 uint32_t mothPartialByteCount();
@@ -41,6 +45,7 @@ void commandList();
 void commandSetTime(const String &arg);
 void commandReqProbe(uint32_t seconds);
 void commandWatchPins(uint32_t seconds);
+void commandSwapProbe(uint32_t seconds);
 void handleCommand(String command);
 void runBootProbe();
 
