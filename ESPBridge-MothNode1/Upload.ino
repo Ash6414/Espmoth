@@ -12,13 +12,13 @@ bool openBridgeSession(long serverEpoch) {
   mothRequest(true);
 
   if (!waitForMothIdle(MOTH_BUSY_WAIT_MS)) {
-    Serial.println("AudioMoth did not release MOTH_BUSY after ESP_REQ");
-    mothRequest(false);
-    return false;
+    Serial.printf("AudioMoth kept MOTH_BUSY high for %lu ms after ESP_REQ; trying UART READY anyway (MOTH_BUSY=%d ESP_REQ=%d)\n",
+                  (unsigned long)MOTH_BUSY_WAIT_MS, mothBusy(), digitalRead(PIN_MOTH_REQ));
   }
 
   if (!bridgeWaitReady(MOTH_READY_TIMEOUT_MS)) {
-    Serial.println("AudioMoth did not send OK BRIDGE_READY");
+    Serial.printf("AudioMoth did not send OK BRIDGE_READY; MOTH_BUSY=%d ESP_REQ=%d. Check AudioMoth switch is CUSTOM and bridge service window is active.\n",
+                  mothBusy(), digitalRead(PIN_MOTH_REQ));
     mothRequest(false);
     return false;
   }
