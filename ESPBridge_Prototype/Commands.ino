@@ -10,6 +10,7 @@ void printHelp() {
   Serial.println("  time <epoch>      Send TIME <epoch> 0");
   Serial.println("  raw <command>     Send a raw bridge command");
   Serial.println("  reqprobe <sec>    Hold REQ high, send PINGs, log BUSY/UART");
+  Serial.println("  rxdiag <sec>      Capture GPIO RX edge timing and try baud decodes");
   Serial.println("  swapprobe <sec>   Run reqprobe with ESP RX/TX pins swapped");
   Serial.println("  watch <sec>       Log REQ/BUSY without changing pins");
   Serial.println("  done              Send DONE and deassert REQ");
@@ -132,6 +133,7 @@ void commandReqProbe(uint32_t seconds) {
   Serial.println("Holding ESP_REQ high, probing UART with PING.");
 
   flushMothInput();
+  startRawRxCapture();
   setRequest(true);
 
   uint32_t durationMs = seconds * 1000UL;
@@ -194,9 +196,11 @@ void commandReqProbe(uint32_t seconds) {
 
   setRequest(false);
   delay(25);
+  stopRawRxCapture();
   printProbeSample(millis() - start, lastReq, lastBusy, lastRx, true);
   uint32_t rawBytes = mothRxByteCount();
   uint32_t partialBytes = mothPartialByteCount();
+  bool rawDecodeSawBridge = printRawRxCaptureSummary();
   Serial.println();
   Serial.println("REQ probe summary:");
   Serial.printf("  PINGs sent: %lu\n", (unsigned long)pingCount);
@@ -212,13 +216,16 @@ void commandReqProbe(uint32_t seconds) {
                 (unsigned long)edges.rxFalling);
   Serial.printf("  READY observed: %s\n", sawReady ? "YES" : "NO");
   Serial.printf("  PONG observed: %s\n", sawPong ? "YES" : "NO");
+  Serial.printf("  Raw GPIO decode observed bridge text: %s\n", rawDecodeSawBridge ? "YES" : "NO");
 
   if (sawBridge) {
     Serial.println("RESULT: PASS basic ESP32 <-> AudioMoth bridge communication detected.");
   } else if (!sawBusyLow) {
     Serial.println("RESULT: FAIL MOTH_BUSY never went low while ESP_REQ was high.");
   } else if (!sawAnyLine) {
-    if (rawBytes > 0) {
+    if (rawDecodeSawBridge) {
+      Serial.println("RESULT: FAIL AudioMoth TX is GPIO-decodable, but ESP32 hardware UART decoded zero bridge lines.");
+    } else if (rawBytes > 0) {
       Serial.println("RESULT: FAIL UART bytes arrived, but no newline-terminated AudioMoth bridge line was received.");
     } else if (edges.rxRising > 0 || edges.rxFalling > 0) {
       Serial.println("RESULT: FAIL B9 GPIO pulse reached ESP RX, but no UART bytes decoded.");
@@ -272,6 +279,8 @@ void handleCommand(String command) {
     sendMothLine(command.substring(4));
   } else if (lower.startsWith("reqprobe")) {
     commandReqProbe(parseSecondsOrDefault(command.substring(8), 20));
+  } else if (lower.startsWith("rxdiag")) {
+    commandRxDiag(parseSecondsOrDefault(command.substring(6), 10));
   } else if (lower.startsWith("swapprobe")) {
     commandSwapProbe(parseSecondsOrDefault(command.substring(9), 20));
   } else if (lower.startsWith("watch")) {
