@@ -12,6 +12,7 @@
 
 #include <Arduino.h>
 #include "Config.h"
+#include "ProbeEdges.h"
 
 HardwareSerial MothSerial(2);
 
