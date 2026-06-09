@@ -2,7 +2,7 @@ void initMothBridge() {
   pinMode(PIN_MOTH_REQ, OUTPUT);
   digitalWrite(PIN_MOTH_REQ, LOW);
 
-  pinMode(PIN_MOTH_BUSY, INPUT);
+  pinMode(PIN_MOTH_BUSY, INPUT_PULLDOWN);
 
   pinMode(PIN_MOTH_UART_RX, INPUT_PULLUP);
   pinMode(PIN_MOTH_UART_TX, INPUT_PULLUP);
