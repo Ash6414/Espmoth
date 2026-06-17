@@ -14,6 +14,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
+- Reads AudioMoth SD total/free space during `LIST` and includes it in the manifest and heartbeat.
 - Waits for an AudioMoth `STATUS` response with `allowed=1` before sending `LIST`, `GET`, or `DELETE`, so file transfer does not accidentally run inside the early time-sync bridge window.
 - Ignores stale `OK BRIDGE_READY` and `OK PONG` beacon lines while waiting for command-specific replies, keeping `GET` chunk framing aligned.
 - Sends the ESP32's current estimated epoch on every bridge retry. This keeps AudioMoth's service-window deadline advancing instead of repeatedly resetting it to the original boot-time server timestamp.
@@ -90,6 +91,8 @@ POST /v1/nodes/{NODE_ID}/delete_confirm
 The chunk endpoint receives raw `application/octet-stream` bytes. The ESP asks the server to use the AudioMoth bridge chunk size (`MOTH_CHUNK_BYTES`, currently 512 bytes), so each UART `GET` payload maps directly to one server chunk. The ESP signs only the URL path because MothServer authenticates `request.url.path`.
 
 If an upload is interrupted, the ESP32 can safely start from offset `0` again. The server treats already-received chunks as duplicates, and the ESP32 filters the large `already_received_chunks` resume list out of the init response so partial sessions do not overflow ArduinoJson memory.
+
+When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD total_kb=... free_kb=...` line before file entries. The ESP32 logs that size, posts `sd_total_kb`, `sd_free_kb`, and `sd_free_mb` with the manifest, and reports `sd_free_mb` on the next heartbeat.
 
 At the 250000-baud bridge speed, WAV upload is much faster than the original 9600-baud prototype, but still depends on a matching AudioMoth bin. Keep AudioMoth schedules configured with idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
 
