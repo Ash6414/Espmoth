@@ -315,11 +315,28 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
 
   if (maxBytes == 0 || maxBytes > MOTH_CHUNK_BYTES) maxBytes = MOTH_CHUNK_BYTES;
 
-  bridgeSendLine("GET " + path + " " + String(offset) + " " + String(maxBytes));
-
   String line;
-  if (!bridgeReadExpectedLine("DATA ", line, MOTH_DATA_HEADER_TIMEOUT_MS)) return false;
-  if (!line.startsWith("DATA ")) return false;
+  bool gotHeader = false;
+  for (uint8_t attempt = 1; attempt <= 3; attempt++) {
+    bridgeFlushInput();
+    bridgeSendLine("GET " + path + " " + String(offset) + " " + String(maxBytes));
+
+    if (bridgeReadExpectedLine("DATA ", line, MOTH_DATA_HEADER_TIMEOUT_MS) && line.startsWith("DATA ")) {
+      gotHeader = true;
+      break;
+    }
+
+    Serial.printf("GET header attempt %u failed at offset %lu; last line='%s'\n",
+                  attempt, (unsigned long)offset, line.c_str());
+    if (line == "OK BRIDGE_SLEEP") break;
+    delay(100);
+  }
+
+  if (!gotHeader) {
+    Serial.printf("GET expected DATA at offset %lu; got '%s'\n",
+                  (unsigned long)offset, line.c_str());
+    return false;
+  }
 
   char parsedPath[128] = {0};
   unsigned long parsedOffset = 0;
@@ -327,12 +344,32 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   unsigned long parsedCrc = 0;
 
   int matched = sscanf(line.c_str(), "DATA %127s %lu %u %lx", parsedPath, &parsedOffset, &parsedLength, &parsedCrc);
-  if (matched != 4) return false;
-  if (String(parsedPath) != path) return false;
-  if ((uint32_t)parsedOffset != offset) return false;
-  if (parsedLength > MOTH_CHUNK_BYTES) return false;
+  if (matched != 4) {
+    Serial.printf("GET malformed DATA header at offset %lu: '%s'\n",
+                  (unsigned long)offset, line.c_str());
+    return false;
+  }
+  if (String(parsedPath) != path) {
+    Serial.printf("GET path mismatch at offset %lu: expected '%s' got '%s'\n",
+                  (unsigned long)offset, path.c_str(), parsedPath);
+    return false;
+  }
+  if ((uint32_t)parsedOffset != offset) {
+    Serial.printf("GET offset mismatch: expected %lu got %lu\n",
+                  (unsigned long)offset, parsedOffset);
+    return false;
+  }
+  if (parsedLength > MOTH_CHUNK_BYTES) {
+    Serial.printf("GET length too large at offset %lu: %u\n",
+                  (unsigned long)offset, parsedLength);
+    return false;
+  }
 
-  if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS)) return false;
+  if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS)) {
+    Serial.printf("GET binary timeout at offset %lu length %u\n",
+                  (unsigned long)offset, parsedLength);
+    return false;
+  }
 
   uint32_t localCrc = crc32Update(0, mothChunk, parsedLength);
   if (localCrc != (uint32_t)parsedCrc) {
