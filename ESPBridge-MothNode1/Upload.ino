@@ -7,6 +7,13 @@ bool waitForMothIdle(uint32_t waitMs) {
   return !mothBusy();
 }
 
+uint32_t bridgeEpochNow(long serverEpoch) {
+  uint32_t estimated = estimatedEpochUtc();
+  if (estimated > 1700000000UL) return estimated;
+  if (serverEpoch > 1700000000L) return (uint32_t)serverEpoch;
+  return 0;
+}
+
 bool openBridgeSession(long serverEpoch) {
   bridgeFlushInput();
   mothRequest(true);
@@ -30,12 +37,45 @@ bool openBridgeSession(long serverEpoch) {
     return false;
   }
 
-  uint32_t epoch = (uint32_t)(serverEpoch > 1700000000L ? serverEpoch : estimatedEpochUtc());
+  uint32_t epoch = bridgeEpochNow(serverEpoch);
   if (epoch > 1700000000UL) {
     bridgeSetTime(epoch, 0);
   }
 
   return true;
+}
+
+bool bridgeStatusAllowsUpload(const String &status) {
+  return status.indexOf("allowed=1") >= 0;
+}
+
+bool openBridgeUploadSession(long serverEpoch) {
+  uint32_t start = millis();
+  uint32_t attempt = 0;
+
+  while (millis() - start < MOTH_UPLOAD_WINDOW_WAIT_MS) {
+    attempt += 1;
+    if (!openBridgeSession(serverEpoch)) {
+      delay(MOTH_UPLOAD_WINDOW_RETRY_MS);
+      continue;
+    }
+
+    String status;
+    bool statusOk = bridgeStatus(status);
+    if (statusOk && bridgeStatusAllowsUpload(status)) {
+      Serial.printf("AudioMoth file service ready after %lu attempt(s): %s\n",
+                    (unsigned long)attempt, status.c_str());
+      return true;
+    }
+
+    Serial.printf("AudioMoth bridge is alive but file service is not ready on attempt %lu: %s\n",
+                  (unsigned long)attempt, statusOk ? status.c_str() : "STATUS unavailable");
+    closeBridgeSession();
+    delay(MOTH_UPLOAD_WINDOW_RETRY_MS);
+  }
+
+  Serial.println("AudioMoth file service did not become upload-ready before timeout");
+  return false;
 }
 
 void closeBridgeSession() {
@@ -49,7 +89,7 @@ bool syncMothTimeOnly(long serverEpoch) {
   if (p.batteryV < MIN_MOTH_TIME_SYNC_V) return false;
 
   if (!openBridgeSession(serverEpoch)) return false;
-  uint32_t epoch = (uint32_t)(serverEpoch > 1700000000L ? serverEpoch : estimatedEpochUtc());
+  uint32_t epoch = bridgeEpochNow(serverEpoch);
   bool ok = bridgeSetTime(epoch, 0);
   closeBridgeSession();
   return ok;
@@ -70,9 +110,9 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
     return summary;
   }
 
-  if (!openBridgeSession(serverEpoch)) {
+  if (!openBridgeUploadSession(serverEpoch)) {
     summary.code = UPLOAD_BRIDGE_FAILED;
-    summary.message = "bridge session failed";
+    summary.message = "AudioMoth file service not ready";
     return summary;
   }
 
