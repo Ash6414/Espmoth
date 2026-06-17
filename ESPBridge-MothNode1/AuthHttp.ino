@@ -137,7 +137,9 @@ long getServerTime(uint32_t *rttMsOut) {
 }
 
 void addAuthHeaders(HTTPClient &http, const String &method, const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch) {
-  String ts = String(serverEpoch > 0 ? serverEpoch : (long)estimatedEpochUtc());
+  uint32_t estimated = estimatedEpochUtc();
+  long authEpoch = estimated > 1700000000UL ? (long)estimated : serverEpoch;
+  String ts = String(authEpoch);
   String nonce = randomNonce();
   String bodyHash = sha256Hex(body, bodyLen);
   String path = pathWithoutQuery(pathAndQuery);
@@ -207,7 +209,9 @@ bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bo
   responseOut = http.getString();
   http.end();
 
-  Serial.printf("POST(binary) %s bytes=%u -> %d\n", pathAndQuery.c_str(), (unsigned)bodyLen, code);
+  if (code < 200 || code >= 300) {
+    Serial.printf("POST(binary) %s bytes=%u -> %d\n", pathAndQuery.c_str(), (unsigned)bodyLen, code);
+  }
 #if DEBUG_HTTP_RESPONSES
   if (responseOut.length()) Serial.println(responseOut);
 #endif
@@ -228,7 +232,9 @@ bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bod
   responseOut = http.getString();
   http.end();
 
-  Serial.printf("PUT(binary) %s bytes=%u -> %d\n", pathAndQuery.c_str(), (unsigned)bodyLen, code);
+  if (code < 200 || code >= 300) {
+    Serial.printf("PUT(binary) %s bytes=%u -> %d\n", pathAndQuery.c_str(), (unsigned)bodyLen, code);
+  }
 #if DEBUG_HTTP_RESPONSES
   if (responseOut.length()) Serial.println(responseOut);
 #endif
