@@ -102,6 +102,7 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   summary.filesUploaded = 0;
   summary.filesDeleted = 0;
   summary.message = "upload not attempted";
+  summary.sd = {false, 0, 0};
 
   PowerState p = readPowerState();
   if (!powerAllowsUpload(p, forced)) {
@@ -117,8 +118,9 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   }
 
   MothFile files[MOTH_MAX_FILES_PER_SESSION];
+  MothSdInfo sdInfo = {false, 0, 0};
   size_t fileCount = 0;
-  bool listed = bridgeList(files, MOTH_MAX_FILES_PER_SESSION, fileCount);
+  bool listed = bridgeList(files, MOTH_MAX_FILES_PER_SESSION, fileCount, &sdInfo);
   if (!listed) {
     closeBridgeSession();
     summary.code = UPLOAD_BRIDGE_FAILED;
@@ -126,6 +128,7 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
     return summary;
   }
 
+  summary.sd = sdInfo;
   summary.filesSeen = (uint16_t)fileCount;
   if (fileCount == 0) {
     closeBridgeSession();
@@ -135,7 +138,7 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   }
 
   String manifestId;
-  if (!serverPostManifest(serverEpoch, files, fileCount, manifestId)) {
+  if (!serverPostManifest(serverEpoch, files, fileCount, sdInfo, manifestId)) {
     closeBridgeSession();
     summary.code = UPLOAD_SERVER_FAILED;
     summary.message = "manifest post failed";
