@@ -18,6 +18,8 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Waits for an AudioMoth `STATUS` response with `allowed=1` before sending `LIST`, `GET`, or `DELETE`, so file transfer does not accidentally run inside the early time-sync bridge window.
 - Ignores stale `OK BRIDGE_READY` and `OK PONG` beacon lines while waiting for command-specific replies, keeping `GET` chunk framing aligned.
 - Sends the ESP32's current estimated epoch on every bridge retry. This keeps AudioMoth's service-window deadline advancing instead of repeatedly resetting it to the original boot-time server timestamp.
+- Signs every server request with the ESP32's current estimated epoch, so long uploads do not age out of the server auth window.
+- Resumes interrupted uploads from the server's compact `next_missing_offset` instead of re-sending every already-received chunk.
 
 ## Wiring
 
@@ -45,8 +47,6 @@ Disable GPS time setting in the AudioMoth configuration. This firmware does not 
 ```text
 TIME <unix_seconds> <milliseconds>
 ```
-
-The matching AudioMoth firmware uses the EFM32 `UART1` hardware route on PB9/PB10, borrowed from the stock GPS interface resources. GPS support is disabled in the bridge firmware so the ESP bridge owns PA7, PA8, PB9, PB10, and UART1 for reliable 115200-baud transfer.
 
 The ESP32 UART setup must leave GPIO16/GPIO17 owned by `Serial2` after `Serial2.begin(...)`. Do not call `pinMode()` on either UART pin after `begin()`, or the ESP32 pin matrix can detach RX2 and the bridge will see GPIO edges but decode zero UART bytes.
 
@@ -92,11 +92,11 @@ POST /v1/nodes/{NODE_ID}/delete_confirm
 
 The chunk endpoint receives raw `application/octet-stream` bytes. The ESP asks the server to use the AudioMoth bridge chunk size (`MOTH_CHUNK_BYTES`, currently 512 bytes), so each UART `GET` payload maps directly to one server chunk. The ESP signs only the URL path because MothServer authenticates `request.url.path`.
 
-If an upload is interrupted, the ESP32 can safely start from offset `0` again. The server treats already-received chunks as duplicates, and the ESP32 filters the large `already_received_chunks` resume list out of the init response so partial sessions do not overflow ArduinoJson memory.
+If an upload is interrupted, `/v1/uploads/init` returns compact resume fields: `total_chunks`, `next_missing_chunk`, `next_missing_offset`, and `received_chunk_count`. The ESP32 starts the next `GET` at `next_missing_offset`; the server still treats duplicate chunks as idempotent retries, but normal restarts avoid re-sending old data.
 
 When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD total_kb=... free_kb=...` line before file entries. The ESP32 logs that size, posts `sd_total_kb`, `sd_free_kb`, and `sd_free_mb` with the manifest, and reports `sd_free_mb` on the next heartbeat.
 
-The hardware UART bridge runs at 115200 baud. The earlier software-UART bridge could emit same-length but corrupted READY lines at that speed, so use an AudioMoth artifact whose build-info says `espbridge_transport=uart1_hardware_loc2_pb9_tx_pb10_rx`. Keep AudioMoth schedules configured with idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
+The matching AudioMoth firmware uses the EFM32 `UART1` hardware route on PB9/PB10, borrowed from the stock GPS interface resources. GPS support is disabled in this bridge firmware so the ESP bridge owns PA7, PA8, PB9, PB10, and UART1 for reliable 115200-baud transfer. The USB debug console on the ESP32 also runs at 115200 baud. Keep AudioMoth schedules configured with idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
 
 ## Command types supported
 
