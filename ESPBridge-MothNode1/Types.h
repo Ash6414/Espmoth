@@ -53,6 +53,8 @@ struct UploadSession {
   String uploadId;
   uint32_t fileId;
   uint32_t chunkSize;
+  uint32_t totalChunks;
+  uint32_t resumeOffset;
 };
 
 struct DeleteCandidate {
