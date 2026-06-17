@@ -68,7 +68,7 @@
 // ----------------------------
 // AudioMoth bridge protocol
 // ----------------------------
-#define MOTH_UART_BAUD               115200
+#define MOTH_UART_BAUD               9600
 #define MOTH_READY_TIMEOUT_MS        65000
 #define MOTH_LINE_TIMEOUT_MS         6000
 #define MOTH_LIST_TIMEOUT_MS         10000
