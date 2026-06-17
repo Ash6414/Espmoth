@@ -7,7 +7,8 @@ bool postHeartbeat(long serverEpoch, const PowerState &p, const UploadSummary &u
   doc["charging"] = p.charging;
   doc["charge_done"] = p.chargeDone;
   doc["recently_charged"] = p.charging || p.chargeDone;
-  doc["sd_free_mb"] = nullptr;
+  if (upload.sd.valid) doc["sd_free_mb"] = (double)upload.sd.freeKb / 1024.0;
+  else doc["sd_free_mb"] = nullptr;
   doc["recording_status"] = mothBusy() ? "MOTH_BUSY" : "MOTH_IDLE";
   doc["upload_status"] = upload.message;
   doc["wifi_rssi_dbm"] = WiFi.RSSI();
@@ -26,6 +27,10 @@ bool postHeartbeat(long serverEpoch, const PowerState &p, const UploadSummary &u
   stats["files_uploaded_last"] = upload.filesUploaded;
   stats["files_deleted_last"] = upload.filesDeleted;
   stats["estimated_epoch"] = estimatedEpochUtc();
+  if (upload.sd.valid) {
+    stats["sd_total_mb"] = upload.sd.totalKb / 1024UL;
+    stats["sd_free_mb"] = upload.sd.freeKb / 1024UL;
+  }
 
   String body;
   serializeJson(doc, body);
@@ -134,14 +139,20 @@ uint32_t serverLocalFileId(const MothFile &file) {
   return crc == 0 ? 1 : crc;
 }
 
-bool serverPostManifest(long serverEpoch, MothFile *files, size_t fileCount, String &manifestIdOut) {
+bool serverPostManifest(long serverEpoch, MothFile *files, size_t fileCount, const MothSdInfo &sdInfo, String &manifestIdOut) {
   manifestIdOut = serverManifestId();
 
-  DynamicJsonDocument doc(1024 + fileCount * 256);
+  DynamicJsonDocument doc(1280 + fileCount * 256);
   doc["node_id"] = NODE_ID;
   doc["manifest_id"] = manifestIdOut;
   doc["deployment_id"] = nullptr;
   doc["sd_card_id"] = "AudioMoth";
+  if (sdInfo.valid) {
+    doc["sd_total_kb"] = sdInfo.totalKb;
+    doc["sd_free_kb"] = sdInfo.freeKb;
+    doc["sd_total_mb"] = sdInfo.totalKb / 1024UL;
+    doc["sd_free_mb"] = (double)sdInfo.freeKb / 1024.0;
+  }
 
   JsonArray arr = doc.createNestedArray("files");
   for (size_t i = 0; i < fileCount; i++) {
