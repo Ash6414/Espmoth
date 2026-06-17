@@ -14,6 +14,9 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
+- Waits for an AudioMoth `STATUS` response with `allowed=1` before sending `LIST`, `GET`, or `DELETE`, so file transfer does not accidentally run inside the early time-sync bridge window.
+- Ignores stale `OK BRIDGE_READY` and `OK PONG` beacon lines while waiting for command-specific replies, keeping `GET` chunk framing aligned.
+- Sends the ESP32's current estimated epoch on every bridge retry. This keeps AudioMoth's service-window deadline advancing instead of repeatedly resetting it to the original boot-time server timestamp.
 
 ## Wiring
 
@@ -86,6 +89,10 @@ POST /v1/nodes/{NODE_ID}/delete_confirm
 
 The chunk endpoint receives raw `application/octet-stream` bytes. The ESP asks the server to use the AudioMoth bridge chunk size (`MOTH_CHUNK_BYTES`, currently 512 bytes), so each UART `GET` payload maps directly to one server chunk. The ESP signs only the URL path because MothServer authenticates `request.url.path`.
 
+If an upload is interrupted, the ESP32 can safely start from offset `0` again. The server treats already-received chunks as duplicates, and the ESP32 filters the large `already_received_chunks` resume list out of the init response so partial sessions do not overflow ArduinoJson memory.
+
+At the proven 9600-baud bridge speed, real WAV upload is intentionally conservative rather than fast. Keep AudioMoth schedules configured with long idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
+
 ## Command types supported
 
 ```text
@@ -101,8 +108,14 @@ MOTH_STATUS
 
 After flashing the request-service AudioMoth bin and putting AudioMoth back in CUSTOM/run mode, run:
 
+```bat
+RunBridgeStatusTest.cmd
+```
+
+Or run the PowerShell script directly with a process-local execution-policy bypass:
+
 ```powershell
-.\RunBridgeStatusTest.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\RunBridgeStatusTest.ps1 -Port COM7 -MonitorSeconds 180
 ```
 
 The script queues a `MOTH_STATUS` command in the local MothServer SQLite database, resets the ESP32 on COM7, monitors serial at 115200, and writes a log under `logs/`.
