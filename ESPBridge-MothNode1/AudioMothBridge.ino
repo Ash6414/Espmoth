@@ -190,6 +190,51 @@ bool bridgeStatus(String &statusOut) {
   return bridgeExpectResponse("STATUS", "OK STATUS", &statusOut);
 }
 
+bool bridgePathCharAllowed(char c) {
+  return (c >= 'A' && c <= 'Z') ||
+         (c >= 'a' && c <= 'z') ||
+         (c >= '0' && c <= '9') ||
+         c == '_' || c == '-' || c == '.' || c == '/';
+}
+
+bool bridgeIsConfigTxtPath(const String &path) {
+  int slash = path.lastIndexOf('/');
+  String name = slash >= 0 ? path.substring(slash + 1) : path;
+  name.toLowerCase();
+  return name == "config.txt";
+}
+
+bool bridgePathCanRoundTrip(const String &path) {
+  if (path.length() == 0 || path.length() >= 96) return false;
+  if (path[0] == '/' || path[0] == '\\') return false;
+  if (path.indexOf("..") >= 0) return false;
+  if (bridgeIsConfigTxtPath(path)) return false;
+
+  for (size_t i = 0; i < path.length(); i += 1) {
+    if (!bridgePathCharAllowed(path[i])) return false;
+  }
+
+  return true;
+}
+
+bool bridgeParseFileLine(const String &line, String &pathOut, uint32_t &sizeOut) {
+  pathOut = "";
+  sizeOut = 0;
+  if (!line.startsWith("FILE ")) return false;
+
+  int lastSpace = line.lastIndexOf(' ');
+  if (lastSpace <= 5 || lastSpace >= (int)line.length() - 1) return false;
+
+  String sizeText = line.substring(lastSpace + 1);
+  for (size_t i = 0; i < sizeText.length(); i += 1) {
+    if (sizeText[i] < '0' || sizeText[i] > '9') return false;
+  }
+
+  pathOut = line.substring(5, lastSpace);
+  sizeOut = (uint32_t)strtoul(sizeText.c_str(), nullptr, 10);
+  return true;
+}
+
 bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut) {
   countOut = 0;
   bridgeSendLine("LIST");
@@ -205,11 +250,17 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut) {
     if (line == "OK BRIDGE_SLEEP") return false;
 
     if (line.startsWith("FILE ")) {
-      int firstSpace = line.indexOf(' ', 5);
-      if (firstSpace < 0) continue;
+      String path;
+      uint32_t size = 0;
+      if (!bridgeParseFileLine(line, path, size)) {
+        Serial.printf("Skipping malformed AudioMoth FILE line: %s\n", line.c_str());
+        continue;
+      }
 
-      String path = line.substring(5, firstSpace);
-      uint32_t size = (uint32_t)strtoul(line.substring(firstSpace + 1).c_str(), nullptr, 10);
+      if (!bridgePathCanRoundTrip(path)) {
+        Serial.printf("Skipping unsafe AudioMoth path: %s\n", path.c_str());
+        continue;
+      }
 
       if (countOut < maxFiles) {
         files[countOut].path = path;
