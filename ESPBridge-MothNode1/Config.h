@@ -88,5 +88,5 @@
 // Debug
 // ----------------------------
 #define SERIAL_BAUD                  115200
-#define DEBUG_BRIDGE_LINES           true
-#define DEBUG_HTTP_RESPONSES         true
+#define DEBUG_BRIDGE_LINES           false
+#define DEBUG_HTTP_RESPONSES         false
