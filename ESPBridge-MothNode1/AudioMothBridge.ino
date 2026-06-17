@@ -81,6 +81,37 @@ bool bridgeReadBytes(uint8_t *dest, uint32_t length, uint32_t timeoutMs) {
   return got == length;
 }
 
+bool bridgeIsAsyncLine(const String &line) {
+  return line == "OK BRIDGE_READY" || line == "OK PONG";
+}
+
+bool bridgeReadExpectedLine(const char *expectedPrefix, String &lineOut, uint32_t timeoutMs) {
+  lineOut = "";
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    String line;
+    uint32_t remaining = timeoutMs - (millis() - start);
+    uint32_t slice = remaining > 1000 ? 1000 : remaining;
+    if (slice == 0) break;
+    if (!bridgeReadLine(line, slice)) continue;
+
+    if (line.startsWith(expectedPrefix)) {
+      lineOut = line;
+      return true;
+    }
+
+    if (bridgeIsAsyncLine(line)) continue;
+    if (line.startsWith("ERR") || line == "OK BRIDGE_SLEEP") {
+      lineOut = line;
+      return false;
+    }
+
+    lineOut = line;
+    return false;
+  }
+  return false;
+}
+
 bool bridgeWaitReady(uint32_t timeoutMs) {
   bridgeResetStats();
   String line;
@@ -136,27 +167,27 @@ bool bridgeWaitReady(uint32_t timeoutMs) {
   return false;
 }
 
-bool bridgeExpectOk(const String &cmd, String *responseOut = nullptr) {
+bool bridgeExpectResponse(const String &cmd, const char *expectedPrefix, String *responseOut = nullptr) {
   bridgeSendLine(cmd);
   String line;
-  if (!bridgeReadLine(line, MOTH_LINE_TIMEOUT_MS)) return false;
+  if (!bridgeReadExpectedLine(expectedPrefix, line, MOTH_LINE_TIMEOUT_MS)) return false;
   if (responseOut) *responseOut = line;
-  return line.startsWith("OK");
+  return line.startsWith(expectedPrefix);
 }
 
 bool bridgePing() {
   String line;
-  return bridgeExpectOk("PING", &line);
+  return bridgeExpectResponse("PING", "OK PONG", &line);
 }
 
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds) {
   String cmd = "TIME " + String(epochUtc) + " " + String(milliseconds);
   String line;
-  return bridgeExpectOk(cmd, &line);
+  return bridgeExpectResponse(cmd, "OK TIME", &line);
 }
 
 bool bridgeStatus(String &statusOut) {
-  return bridgeExpectOk("STATUS", &statusOut);
+  return bridgeExpectResponse("STATUS", "OK STATUS", &statusOut);
 }
 
 bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut) {
@@ -164,12 +195,14 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut) {
   bridgeSendLine("LIST");
 
   uint32_t start = millis();
-  while (millis() - start < MOTH_LINE_TIMEOUT_MS) {
+  while (millis() - start < MOTH_LIST_TIMEOUT_MS) {
     String line;
     if (!bridgeReadLine(line, 1000)) continue;
 
     if (line == "END") return true;
     if (line.startsWith("ERR")) return false;
+    if (bridgeIsAsyncLine(line)) continue;
+    if (line == "OK BRIDGE_SLEEP") return false;
 
     if (line.startsWith("FILE ")) {
       int firstSpace = line.indexOf(' ', 5);
@@ -202,8 +235,7 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   bridgeSendLine("GET " + path + " " + String(offset) + " " + String(maxBytes));
 
   String line;
-  if (!bridgeReadLine(line, MOTH_LINE_TIMEOUT_MS)) return false;
-  if (line.startsWith("ERR")) return false;
+  if (!bridgeReadExpectedLine("DATA ", line, MOTH_DATA_HEADER_TIMEOUT_MS)) return false;
   if (!line.startsWith("DATA ")) return false;
 
   char parsedPath[128] = {0};
@@ -213,10 +245,11 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
 
   int matched = sscanf(line.c_str(), "DATA %127s %lu %u %lx", parsedPath, &parsedOffset, &parsedLength, &parsedCrc);
   if (matched != 4) return false;
+  if (String(parsedPath) != path) return false;
   if ((uint32_t)parsedOffset != offset) return false;
   if (parsedLength > MOTH_CHUNK_BYTES) return false;
 
-  if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_LINE_TIMEOUT_MS)) return false;
+  if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS)) return false;
 
   uint32_t localCrc = crc32Update(0, mothChunk, parsedLength);
   if (localCrc != (uint32_t)parsedCrc) {
@@ -234,7 +267,7 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
 
 bool bridgeDelete(const String &path) {
   String line;
-  return bridgeExpectOk("DELETE " + path, &line);
+  return bridgeExpectResponse("DELETE " + path, "OK DELETE", &line);
 }
 
 void bridgeDone() {
