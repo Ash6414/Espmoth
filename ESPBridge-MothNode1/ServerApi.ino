@@ -100,11 +100,9 @@ void pollCommands(long serverEpoch, const PowerState &p) {
     } else if (type == "MOTH_STATUS") {
       String status;
       bool ok = false;
-      if (!mothBusy()) {
-        mothRequest(true);
-        ok = bridgeWaitReady(MOTH_READY_TIMEOUT_MS) && bridgeStatus(status);
-        bridgeDone();
-        mothRequest(false);
+      if (openBridgeSession(serverEpoch)) {
+        ok = bridgeStatus(status);
+        closeBridgeSession();
       }
       ackCommand(serverEpoch, id, ok ? status : String("AudioMoth status unavailable"));
     } else {
@@ -187,8 +185,15 @@ bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &
   String response;
   if (!signedPostJson(ENDPOINT_UPLOAD_INIT, body, serverEpoch, response)) return false;
 
-  StaticJsonDocument<1024> resp;
-  DeserializationError err = deserializeJson(resp, response);
+  StaticJsonDocument<128> filter;
+  filter["ok"] = true;
+  filter["already_complete"] = true;
+  filter["file_id"] = true;
+  filter["upload_id"] = true;
+  filter["chunk_size"] = true;
+
+  StaticJsonDocument<768> resp;
+  DeserializationError err = deserializeJson(resp, response, DeserializationOption::Filter(filter));
   if (err || !(resp["ok"] | false)) return false;
 
   session.alreadyComplete = resp["already_complete"] | false;
