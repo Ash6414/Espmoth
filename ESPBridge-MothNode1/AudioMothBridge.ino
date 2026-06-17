@@ -235,8 +235,27 @@ bool bridgeParseFileLine(const String &line, String &pathOut, uint32_t &sizeOut)
   return true;
 }
 
-bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut) {
+bool bridgeParseSdLine(const String &line, MothSdInfo &sdOut) {
+  if (!line.startsWith("SD ")) return false;
+
+  unsigned long totalKb = 0;
+  unsigned long freeKb = 0;
+  int matched = sscanf(line.c_str(), "SD total_kb=%lu free_kb=%lu", &totalKb, &freeKb);
+  if (matched != 2) return false;
+
+  sdOut.valid = true;
+  sdOut.totalKb = (uint32_t)totalKb;
+  sdOut.freeKb = (uint32_t)freeKb;
+  return true;
+}
+
+bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *sdInfo) {
   countOut = 0;
+  if (sdInfo) {
+    sdInfo->valid = false;
+    sdInfo->totalKb = 0;
+    sdInfo->freeKb = 0;
+  }
   bridgeSendLine("LIST");
 
   uint32_t start = millis();
@@ -248,6 +267,19 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut) {
     if (line.startsWith("ERR")) return false;
     if (bridgeIsAsyncLine(line)) continue;
     if (line == "OK BRIDGE_SLEEP") return false;
+
+    if (line.startsWith("SD ")) {
+      MothSdInfo parsed = {false, 0, 0};
+      if (bridgeParseSdLine(line, parsed)) {
+        if (sdInfo) *sdInfo = parsed;
+        Serial.printf("AudioMoth SD: free=%lu MB total=%lu MB\n",
+                      (unsigned long)(parsed.freeKb / 1024UL),
+                      (unsigned long)(parsed.totalKb / 1024UL));
+      } else {
+        Serial.printf("Skipping malformed AudioMoth SD line: %s\n", line.c_str());
+      }
+      continue;
+    }
 
     if (line.startsWith("FILE ")) {
       String path;
