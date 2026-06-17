@@ -14,6 +14,12 @@ struct MothFile {
   uint32_t localFileId;
 };
 
+struct MothSdInfo {
+  bool valid;
+  uint32_t totalKb;
+  uint32_t freeKb;
+};
+
 struct ChunkResult {
   bool ok;
   String path;
@@ -38,6 +44,7 @@ struct UploadSummary {
   uint16_t filesUploaded;
   uint16_t filesDeleted;
   String message;
+  MothSdInfo sd;
 };
 
 struct UploadSession {
