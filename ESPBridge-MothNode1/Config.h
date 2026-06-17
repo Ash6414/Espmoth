@@ -77,7 +77,7 @@
 #define MOTH_BUSY_WAIT_MS            5000
 #define MOTH_ASSERT_REQ_AT_BOOT      true
 #define MOTH_MAX_FILES_PER_SESSION   16
-#define MOTH_CHUNK_BYTES             512
+#define MOTH_CHUNK_BYTES             4096
 #define MOTH_UPLOAD_WINDOW_WAIT_MS   120000
 #define MOTH_UPLOAD_WINDOW_RETRY_MS  5000
 
