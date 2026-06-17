@@ -1,11 +1,6 @@
 /*
   ESP32-WROOM-U firmware for AudioMoth Dev custom ESP bridge firmware.
 
-  This sketch replaces the earlier fake-GPS sketch.
-  AudioMoth now owns its own SD card. The ESP32 requests files over UART,
-  uploads them to the FastAPI server, and asks AudioMoth to delete only after
-  confirmed server upload.
-
   Arduino libraries:
     - ArduinoJson by Benoit Blanchon
     - ESP32 Arduino core
@@ -89,7 +84,7 @@ bool bridgeWaitReady(uint32_t timeoutMs);
 bool bridgePing();
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds);
 bool bridgeStatus(String &statusOut);
-bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut);
+bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *sdInfo);
 bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, ChunkResult &result);
 bool bridgeDelete(const String &path);
 void bridgeDone();
@@ -103,7 +98,7 @@ void pollCommands(long serverEpoch, const PowerState &p);
 String serverManifestId();
 String serverFilenameFromPath(const String &path);
 uint32_t serverLocalFileId(const MothFile &file);
-bool serverPostManifest(long serverEpoch, MothFile *files, size_t fileCount, String &manifestIdOut);
+bool serverPostManifest(long serverEpoch, MothFile *files, size_t fileCount, const MothSdInfo &sdInfo, String &manifestIdOut);
 bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &file, UploadSession &session);
 bool serverUploadChunk(long serverEpoch, const UploadSession &session, const ChunkResult &chunk);
 bool serverFinishFile(long serverEpoch, const UploadSession &session);
