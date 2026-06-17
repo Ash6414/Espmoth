@@ -220,7 +220,7 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
     return true;
   }
 
-  uint32_t offset = 0;
+  uint32_t offset = session.resumeOffset;
   while (offset < file.size) {
     uint32_t remaining = file.size - offset;
     uint32_t requestBytes = remaining > session.chunkSize ? session.chunkSize : remaining;
