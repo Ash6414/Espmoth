@@ -10,7 +10,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Talks to AudioMoth over UART at 9600 baud.
+- Talks to AudioMoth over UART at 250000 baud.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -91,7 +91,7 @@ The chunk endpoint receives raw `application/octet-stream` bytes. The ESP asks t
 
 If an upload is interrupted, the ESP32 can safely start from offset `0` again. The server treats already-received chunks as duplicates, and the ESP32 filters the large `already_received_chunks` resume list out of the init response so partial sessions do not overflow ArduinoJson memory.
 
-At the proven 9600-baud bridge speed, real WAV upload is intentionally conservative rather than fast. Keep AudioMoth schedules configured with long idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
+At the 250000-baud bridge speed, WAV upload is much faster than the original 9600-baud prototype, but still depends on a matching AudioMoth bin. Keep AudioMoth schedules configured with idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
 
 ## Command types supported
 
