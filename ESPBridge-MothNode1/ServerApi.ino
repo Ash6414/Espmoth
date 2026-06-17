@@ -182,6 +182,8 @@ bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &
   session.uploadId = "";
   session.fileId = 0;
   session.chunkSize = 0;
+  session.totalChunks = 0;
+  session.resumeOffset = 0;
 
   StaticJsonDocument<512> doc;
   doc["manifest_id"] = manifestId;
@@ -202,6 +204,8 @@ bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &
   filter["file_id"] = true;
   filter["upload_id"] = true;
   filter["chunk_size"] = true;
+  filter["total_chunks"] = true;
+  filter["next_missing_offset"] = true;
 
   StaticJsonDocument<768> resp;
   DeserializationError err = deserializeJson(resp, response, DeserializationOption::Filter(filter));
@@ -216,12 +220,27 @@ bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &
   const char *uploadId = resp["upload_id"] | "";
   session.uploadId = String(uploadId);
   session.chunkSize = resp["chunk_size"] | 0;
+  session.totalChunks = resp["total_chunks"] | 0;
+  session.resumeOffset = resp["next_missing_offset"] | 0;
 
   if (session.uploadId.length() == 0 || session.chunkSize == 0) return false;
   if (session.chunkSize != MOTH_CHUNK_BYTES) {
     Serial.printf("Server chunk size %lu does not match AudioMoth bridge chunk size %u\n",
                   (unsigned long)session.chunkSize, MOTH_CHUNK_BYTES);
     return false;
+  }
+  if (session.resumeOffset > file.size) {
+    Serial.printf("Server resume offset %lu is beyond file size %lu\n",
+                  (unsigned long)session.resumeOffset, (unsigned long)file.size);
+    return false;
+  }
+  if (session.resumeOffset < file.size && (session.resumeOffset % session.chunkSize) != 0) {
+    Serial.printf("Server resume offset %lu is not aligned to chunk size %lu\n",
+                  (unsigned long)session.resumeOffset, (unsigned long)session.chunkSize);
+    return false;
+  }
+  if (session.resumeOffset > 0) {
+    Serial.printf("Resuming %s at byte %lu\n", file.path.c_str(), (unsigned long)session.resumeOffset);
   }
 
   return true;
