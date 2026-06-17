@@ -10,7 +10,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Talks to AudioMoth over UART at 115200 baud.
+- Talks to AudioMoth over the ESP bridge UART at 115200 baud.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -45,6 +45,8 @@ Disable GPS time setting in the AudioMoth configuration. This firmware does not 
 ```text
 TIME <unix_seconds> <milliseconds>
 ```
+
+The matching AudioMoth firmware uses the EFM32 `UART1` hardware route on PB9/PB10, borrowed from the stock GPS interface resources. GPS support is disabled in the bridge firmware so the ESP bridge owns PA7, PA8, PB9, PB10, and UART1 for reliable 115200-baud transfer.
 
 The ESP32 UART setup must leave GPIO16/GPIO17 owned by `Serial2` after `Serial2.begin(...)`. Do not call `pinMode()` on either UART pin after `begin()`, or the ESP32 pin matrix can detach RX2 and the bridge will see GPIO edges but decode zero UART bytes.
 
@@ -94,7 +96,7 @@ If an upload is interrupted, the ESP32 can safely start from offset `0` again. T
 
 When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD total_kb=... free_kb=...` line before file entries. The ESP32 logs that size, posts `sd_total_kb`, `sd_free_kb`, and `sd_free_mb` with the manifest, and reports `sd_free_mb` on the next heartbeat.
 
-At the 115200-baud bridge speed, WAV upload is much faster than the original 9600-baud prototype while staying within a safer range for the AudioMoth software UART. It still depends on a matching AudioMoth bin. Keep AudioMoth schedules configured with idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
+The hardware UART bridge runs at 115200 baud. The earlier software-UART bridge could emit same-length but corrupted READY lines at that speed, so use an AudioMoth artifact whose build-info says `espbridge_transport=uart1_hardware_loc2_pb9_tx_pb10_rx`. Keep AudioMoth schedules configured with idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
 
 ## Command types supported
 
