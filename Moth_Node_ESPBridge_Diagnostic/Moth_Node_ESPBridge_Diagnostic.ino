@@ -7,8 +7,8 @@
   - Uses a7 as ESP_REQ and a8 as MOTH_BUSY. Do not run this against GPS-spoof firmware.
 
   Wiring:
-    ESP32 GPIO16 RX2  <- AudioMoth b9 UART TX
-    ESP32 GPIO17 TX2  -> AudioMoth b10 UART RX
+    ESP32 GPIO32 RX2  <- AudioMoth b9 UART TX
+    ESP32 GPIO33 TX2  -> AudioMoth b10 UART RX
     ESP32 GPIO25 OUT  -> AudioMoth a7 ESP_REQ
     ESP32 GPIO26 IN   <- AudioMoth a8 MOTH_BUSY
     GND common
@@ -36,8 +36,8 @@
 // ----------------------------
 // ESP32 <-> AudioMoth bridge pins
 // ----------------------------
-static constexpr int PIN_MOTH_UART_RX = 16;  // ESP32 RX2  <- AudioMoth b9 TX
-static constexpr int PIN_MOTH_UART_TX = 17;  // ESP32 TX2  -> AudioMoth b10 RX
+static constexpr int PIN_MOTH_UART_RX = 32;  // ESP32 RX2  <- AudioMoth b9 TX
+static constexpr int PIN_MOTH_UART_TX = 33;  // ESP32 TX2  -> AudioMoth b10 RX
 static constexpr int PIN_MOTH_REQ     = 25;  // ESP32 OUT  -> AudioMoth a7 ESP_REQ
 static constexpr int PIN_MOTH_BUSY    = 26;  // ESP32 IN   <- AudioMoth a8 MOTH_BUSY
 
