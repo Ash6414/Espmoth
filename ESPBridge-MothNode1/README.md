@@ -25,8 +25,8 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 
 ```text
 ESP32-WROOM-U                 AudioMoth Dev
-GPIO16 RX2  <---------------- b9  UART TX
-GPIO17 TX2  ----------------> b10 UART RX
+GPIO32 RX2  <---------------- b9  UART TX
+GPIO33 TX2  ----------------> b10 UART RX
 GPIO25 OUT  ----------------> a7  ESP_REQ
 GPIO26 IN   <---------------- a8  MOTH_BUSY
 GND         ----------------- GND
@@ -48,7 +48,7 @@ Disable GPS time setting in the AudioMoth configuration. This firmware does not 
 TIME <unix_seconds> <milliseconds>
 ```
 
-The ESP32 UART setup must leave GPIO16/GPIO17 owned by `Serial2` after `Serial2.begin(...)`. Do not call `pinMode()` on either UART pin after `begin()`, or the ESP32 pin matrix can detach RX2 and the bridge will see GPIO edges but decode zero UART bytes.
+The ESP32 UART setup must leave GPIO32/GPIO33 owned by `Serial2` after `Serial2.begin(...)`. Do not call `pinMode()` on either UART pin after `begin()`, or the ESP32 pin matrix can detach RX2 and the bridge will see GPIO edges but decode zero UART bytes.
 
 ## Arduino setup
 
