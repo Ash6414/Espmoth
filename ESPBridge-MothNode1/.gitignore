@@ -1,0 +1,13 @@
+build/
+logs/
+*.bin
+*.elf
+*.map
+*.lst
+*.hex
+*.partitions.bin
+*.bootloader.bin
+*.merged.bin
+*.log
+.DS_Store
+Thumbs.db
