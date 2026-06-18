@@ -135,7 +135,7 @@ switch ($result) {
     exit 0
   }
   "NO_AUDIOMOTH_UART" {
-    Write-Host "ESP32 asserted ESP_REQ and sent PING, but received zero bytes. Check AudioMoth is flashed with the current READY-beacon bin, is running in CUSTOM mode, and has B9/B10 wired to GPIO16/GPIO17."
+    Write-Host "ESP32 asserted ESP_REQ and sent PING, but received zero bytes. Check AudioMoth is flashed with the current READY-beacon bin, is running in CUSTOM mode, and has B9/B10 wired to GPIO32/GPIO33."
     exit 2
   }
   "TIMEOUT_WITH_ACTIVITY" {
