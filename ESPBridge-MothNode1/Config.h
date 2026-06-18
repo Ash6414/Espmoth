@@ -46,8 +46,8 @@
 
 // New custom AudioMoth firmware bridge wiring.
 // This replaces the old GPS-spoof use of a7/a8.
-#define PIN_MOTH_UART_RX          16   // ESP32 RX2  <- AudioMoth b9 UART TX
-#define PIN_MOTH_UART_TX          17   // ESP32 TX2  -> AudioMoth b10 UART RX
+#define PIN_MOTH_UART_RX          32   // ESP32 RX2  <- AudioMoth b9 UART TX
+#define PIN_MOTH_UART_TX          33   // ESP32 TX2  -> AudioMoth b10 UART RX
 #define PIN_MOTH_REQ              25   // ESP32 out  -> AudioMoth a7 ESP_REQ
 #define PIN_MOTH_BUSY             26   // ESP32 in   <- AudioMoth a8 MOTH_BUSY
 
