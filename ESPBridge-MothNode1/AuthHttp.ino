@@ -69,7 +69,7 @@ String pathWithoutQuery(const String &pathAndQuery) {
 
 bool connectWiFi() {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.begin(cfgWifiSsid().c_str(), cfgWifiPassword().c_str());
 
   uint32_t start = millis();
   Serial.print("Connecting Wi-Fi");
@@ -112,7 +112,7 @@ long getServerTime(uint32_t *rttMsOut) {
   WiFiClient client;
   HTTPClient http;
   String path = ENDPOINT_SERVER_TIME;
-  String url = String(BASE_URL) + path;
+  String url = cfgBaseUrl() + path;
 
   if (!http.begin(client, url)) return 0;
   http.setTimeout(HTTP_TIMEOUT_MS);
@@ -144,10 +144,10 @@ void addAuthHeaders(HTTPClient &http, const String &method, const String &pathAn
   String bodyHash = sha256Hex(body, bodyLen);
   String path = pathWithoutQuery(pathAndQuery);
   String canonical = method + "\n" + path + "\n" + ts + "\n" + nonce + "\n" + bodyHash;
-  String sig = hmacSha256Hex(DEVICE_SECRET, canonical);
+  String sig = hmacSha256Hex(cfgDeviceSecret(), canonical);
 
-  http.addHeader("X-Node-ID", NODE_ID);
-  http.addHeader("X-Key-ID", KEY_ID);
+  http.addHeader("X-Node-ID", cfgNodeId());
+  http.addHeader("X-Key-ID", cfgKeyId());
   http.addHeader("X-Timestamp", ts);
   http.addHeader("X-Nonce", nonce);
   http.addHeader("X-Body-SHA256", bodyHash);
@@ -157,7 +157,7 @@ void addAuthHeaders(HTTPClient &http, const String &method, const String &pathAn
 bool signedPostJson(const String &path, const String &body, long serverEpoch, String &responseOut) {
   WiFiClient client;
   HTTPClient http;
-  String url = String(BASE_URL) + path;
+  String url = cfgBaseUrl() + path;
   if (!http.begin(client, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
@@ -178,7 +178,7 @@ bool signedPostJson(const String &path, const String &body, long serverEpoch, St
 bool signedGet(const String &path, long serverEpoch, String &responseOut) {
   WiFiClient client;
   HTTPClient http;
-  String url = String(BASE_URL) + path;
+  String url = cfgBaseUrl() + path;
   if (!http.begin(client, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
@@ -198,7 +198,7 @@ bool signedGet(const String &path, long serverEpoch, String &responseOut) {
 bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut) {
   WiFiClient client;
   HTTPClient http;
-  String url = String(BASE_URL) + pathAndQuery;
+  String url = cfgBaseUrl() + pathAndQuery;
   if (!http.begin(client, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
@@ -221,7 +221,7 @@ bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bo
 bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut) {
   WiFiClient client;
   HTTPClient http;
-  String url = String(BASE_URL) + pathAndQuery;
+  String url = cfgBaseUrl() + pathAndQuery;
   if (!http.begin(client, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
