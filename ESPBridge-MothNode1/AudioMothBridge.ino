@@ -7,7 +7,7 @@ void initMothBridge() {
   pinMode(PIN_MOTH_UART_RX, INPUT_PULLUP);
   pinMode(PIN_MOTH_UART_TX, INPUT_PULLUP);
 
-  /* Leave GPIO16/GPIO17 owned by UART2 after begin(). Calling pinMode() on
+  /* Leave the configured UART pins owned by UART2 after begin(). Calling pinMode() on
      either UART pin after this can detach the ESP32 pin matrix from Serial2. */
   MothSerial.begin(MOTH_UART_BAUD, SERIAL_8N1, PIN_MOTH_UART_RX, PIN_MOTH_UART_TX);
   while (MothSerial.available()) MothSerial.read();
