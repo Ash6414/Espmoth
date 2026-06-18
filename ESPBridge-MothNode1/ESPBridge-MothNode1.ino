@@ -6,8 +6,8 @@
     - ESP32 Arduino core
 
   Wiring:
-    ESP32 GPIO16 RX2  <- AudioMoth b9 UART TX
-    ESP32 GPIO17 TX2  -> AudioMoth b10 UART RX
+    ESP32 GPIO32 RX2  <- AudioMoth b9 UART TX
+    ESP32 GPIO33 TX2  -> AudioMoth b10 UART RX
     ESP32 GPIO25 OUT  -> AudioMoth a7 ESP_REQ
     ESP32 GPIO26 IN   <- AudioMoth a8 MOTH_BUSY
     ESP32 GPIO34 ADC  <- charge controller battery divider
