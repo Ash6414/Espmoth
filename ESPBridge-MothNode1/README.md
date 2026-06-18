@@ -1,4 +1,4 @@
-# Moth_Node_ESPBridge
+# ESPBridge-MothNode1
 
 ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 
@@ -52,7 +52,7 @@ The ESP32 UART setup must leave GPIO16/GPIO17 owned by `Serial2` after `Serial2.
 
 ## Arduino setup
 
-1. Open the `Moth_Node_ESPBridge` folder in Arduino IDE.
+1. Open the `ESPBridge-MothNode1` folder in Arduino IDE.
 2. Select `ESP32 Dev Module`.
 3. Install `ArduinoJson`.
 4. Upload the same sketch to every ESP32.
@@ -60,8 +60,8 @@ The ESP32 UART setup must leave GPIO16/GPIO17 owned by `Serial2` after `Serial2.
 Arduino CLI equivalents:
 
 ```powershell
-arduino-cli compile --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
-arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
+arduino-cli compile --fqbn esp32:esp32:esp32 ".\ESPBridge-MothNode1"
+arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32 ".\ESPBridge-MothNode1"
 ```
 
 ## First-boot setup portal
