@@ -3,20 +3,28 @@
 /*
   Moth_Node_ESPBridge configuration
 
-  Paste your current Wi-Fi and HMAC settings from the old working sketch here.
-  This file intentionally ships with placeholders.
+  This file intentionally ships without per-node credentials. The first-boot
+  setup portal saves Wi-Fi, server, and HMAC values into ESP32 NVS flash.
 */
 
 // ----------------------------
-// Wi-Fi and server
+// First-flash defaults. Leave these blank for fleet deployment builds.
+// The ESP32 stores real values in NVS flash after the setup portal saves them.
 // ----------------------------
-#define WIFI_SSID       "YOUR_WIFI_SSID"
-#define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
+#define DEFAULT_WIFI_SSID       ""
+#define DEFAULT_WIFI_PASSWORD   ""
 
-#define BASE_URL        "http://YOUR_SERVER_IP:8000"
-#define NODE_ID         "BATNODE_001"
-#define KEY_ID          "key-1"
-#define DEVICE_SECRET   "REPLACE_WITH_64_HEX_OR_SERVER_SECRET"
+#define DEFAULT_BASE_URL        "http://184.83.3.35:8000"
+#define DEFAULT_NODE_ID         ""
+#define DEFAULT_KEY_ID          ""
+#define DEFAULT_DEVICE_SECRET   ""
+
+// First-boot setup portal. If required credentials are missing from NVS, the
+// ESP32 starts this local Wi-Fi AP and serves http://192.168.4.1.
+#define PROVISION_AP_PREFIX     "BatNode"
+#define PROVISION_AP_PASSWORD   "batnode-setup"
+#define PROVISION_PORTAL_TIMEOUT_MS  0UL
+#define PROVISION_FORCE_PIN     -1
 
 // Existing server endpoints from the working GPS-spoof sketch.
 #define ENDPOINT_SERVER_TIME      "/v1/public/server_time"
