@@ -1,6 +1,6 @@
 bool postHeartbeat(long serverEpoch, const PowerState &p, const UploadSummary &upload) {
   StaticJsonDocument<1280> doc;
-  doc["node_id"] = NODE_ID;
+  doc["node_id"] = cfgNodeId();
   doc["battery_v"] = p.batteryV;
   doc["battery_percent"] = p.batteryPercent;
   doc["solar_v"] = nullptr;
@@ -40,7 +40,7 @@ bool postHeartbeat(long serverEpoch, const PowerState &p, const UploadSummary &u
 
 bool postTimeCheck(long serverEpoch, uint32_t rttMs, const String &notes) {
   StaticJsonDocument<512> doc;
-  doc["node_id"] = NODE_ID;
+  doc["node_id"] = cfgNodeId();
   doc["server_epoch"] = serverEpoch;
   doc["esp_epoch_after"] = estimatedEpochUtc();
   doc["audiomoth_epoch"] = nullptr;
@@ -65,13 +65,13 @@ void ackCommand(long serverEpoch, int commandId, const String &msg) {
 
   String body;
   serializeJson(doc, body);
-  String path = String("/v1/device/") + NODE_ID + "/commands/" + String(commandId) + "/ack";
+  String path = String("/v1/device/") + cfgNodeId() + "/commands/" + String(commandId) + "/ack";
   String resp;
   signedPostJson(path, body, serverEpoch, resp);
 }
 
 void pollCommands(long serverEpoch, const PowerState &p) {
-  String path = String("/v1/device/") + NODE_ID + "/commands";
+  String path = String("/v1/device/") + cfgNodeId() + "/commands";
   String resp;
   if (!signedGet(path, serverEpoch, resp)) return;
 
@@ -117,7 +117,7 @@ void pollCommands(long serverEpoch, const PowerState &p) {
 }
 
 String serverManifestId() {
-  return String(NODE_ID) + "-AUDIOMOTH-SD";
+  return cfgNodeId() + "-AUDIOMOTH-SD";
 }
 
 String serverFilenameFromPath(const String &path) {
@@ -143,7 +143,7 @@ bool serverPostManifest(long serverEpoch, MothFile *files, size_t fileCount, con
   manifestIdOut = serverManifestId();
 
   DynamicJsonDocument doc(1280 + fileCount * 256);
-  doc["node_id"] = NODE_ID;
+  doc["node_id"] = cfgNodeId();
   doc["manifest_id"] = manifestIdOut;
   doc["deployment_id"] = nullptr;
   doc["sd_card_id"] = "AudioMoth";
@@ -276,7 +276,7 @@ bool serverFetchDeleteAuthorization(long serverEpoch, const String &manifestId, 
   candidateCount = 0;
   authorizationId = "";
 
-  String path = String("/v1/nodes/") + NODE_ID + "/delete_authorization?manifest_id=" + urlEncode(manifestId);
+  String path = String("/v1/nodes/") + cfgNodeId() + "/delete_authorization?manifest_id=" + urlEncode(manifestId);
   String response;
   if (!signedGet(path, serverEpoch, response)) return false;
 
@@ -334,7 +334,7 @@ bool serverConfirmDeletes(long serverEpoch, const String &authorizationId, Delet
   String body;
   serializeJson(doc, body);
 
-  String path = String("/v1/nodes/") + NODE_ID + "/delete_confirm";
+  String path = String("/v1/nodes/") + cfgNodeId() + "/delete_confirm";
   String response;
   return signedPostJson(path, body, serverEpoch, response);
 }
