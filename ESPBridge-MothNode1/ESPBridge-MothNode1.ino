@@ -76,6 +76,18 @@ bool signedGet(const String &path, long serverEpoch, String &responseOut);
 bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut);
 bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut);
 
+// Provisioning.ino
+bool loadNodeConfig();
+bool nodeConfigReady();
+bool provisioningForced();
+void runProvisioningPortal();
+const String &cfgWifiSsid();
+const String &cfgWifiPassword();
+const String &cfgBaseUrl();
+const String &cfgNodeId();
+const String &cfgKeyId();
+const String &cfgDeviceSecret();
+
 // AudioMothBridge.ino
 void initMothBridge();
 bool mothBusy();
@@ -144,6 +156,11 @@ void setup() {
   rtcBootCounter += 1;
   bootHasFreshServerTime = false;
 
+  bool haveConfig = loadNodeConfig();
+  if (!haveConfig || provisioningForced()) {
+    runProvisioningPortal();
+  }
+
   initPowerPins();
   initMothBridge();
 
@@ -152,6 +169,8 @@ void setup() {
 
   Serial.println();
   Serial.println("=== ESP32 AudioMoth bridge node ===");
+  Serial.printf("Node ID: %s\n", cfgNodeId().c_str());
+  Serial.printf("Server: %s\n", cfgBaseUrl().c_str());
   Serial.printf("Boot count: %lu\n", (unsigned long)rtcBootCounter);
   Serial.printf("Wake cause: %d\n", (int)wakeCause);
   Serial.printf("Battery: %.3f V, %.1f%%, CHRG=%d, DONE=%d\n",
