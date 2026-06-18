@@ -5,8 +5,8 @@
 
 // AudioMoth ESPBridge UART.
 #define MOTH_UART_BAUD              9600
-#define PIN_MOTH_UART_RX            16   // ESP32 RX2 <- AudioMoth b9 UART TX
-#define PIN_MOTH_UART_TX            17   // ESP32 TX2 -> AudioMoth b10 UART RX
+#define PIN_MOTH_UART_RX            32   // ESP32 RX2 <- AudioMoth b9 UART TX
+#define PIN_MOTH_UART_TX            33   // ESP32 TX2 -> AudioMoth b10 UART RX
 
 // AudioMoth bridge handshake.
 #define PIN_MOTH_REQ                25   // ESP32 output -> AudioMoth a7 ESP_REQ
