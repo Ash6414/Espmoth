@@ -53,15 +53,41 @@ The ESP32 UART setup must leave GPIO16/GPIO17 owned by `Serial2` after `Serial2.
 ## Arduino setup
 
 1. Open the `Moth_Node_ESPBridge` folder in Arduino IDE.
-2. Select your ESP32-WROOM-U board profile.
+2. Select `ESP32 Dev Module`.
 3. Install `ArduinoJson`.
-4. Edit `Config.h`:
-   - Wi-Fi SSID/password
-   - `BASE_URL`
-   - `NODE_ID`
-   - `KEY_ID`
-   - `DEVICE_SECRET`
-5. Upload to the ESP32.
+4. Upload the same sketch to every ESP32.
+
+Arduino CLI equivalents:
+
+```powershell
+arduino-cli compile --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
+arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
+```
+
+## First-boot setup portal
+
+The firmware stores node setup in ESP32 NVS flash. Normal boots skip setup when saved credentials exist. If required credentials are missing, the ESP32 starts a local setup Wi-Fi network:
+
+```text
+SSID: BatNode-XXXXXX
+Password: batnode-setup
+Setup page: http://192.168.4.1
+```
+
+The setup page has two paths:
+
+1. Automatic provisioning: enter field Wi-Fi, server URL, and the server `PROVISIONING_TOKEN`. The server creates the node ID, key ID, and device secret, then the ESP32 saves them.
+2. Manual credentials: paste node ID, key ID, and device secret if you already made them with `manage_node.py`.
+
+Default server URL shown by the portal:
+
+```text
+http://184.83.3.35:8000
+```
+
+That public address only works after port forwarding or a tunnel exposes the Pi server. On the same LAN, use the Pi LAN IP instead.
+
+To force setup again later, clear ESP32 NVS with the Arduino IDE erase-flash option or change `PROVISION_FORCE_PIN` in `Config.h` to a GPIO you can pull low at boot.
 
 ## Server endpoints needed for WAV upload
 
