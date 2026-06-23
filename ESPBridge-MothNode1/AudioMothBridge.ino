@@ -15,6 +15,7 @@ void initMothBridge() {
 
 uint32_t bridgeRawBytesRead = 0;
 uint32_t bridgeLinesRead = 0;
+bool bridgeFastBaudActive = false;
 
 void bridgeResetStats() {
   bridgeRawBytesRead = 0;
@@ -178,6 +179,47 @@ bool bridgeExpectResponse(const String &cmd, const char *expectedPrefix, String 
 bool bridgePing() {
   String line;
   return bridgeExpectResponse("PING", "OK PONG", &line);
+}
+
+bool bridgeWaitFastReady(uint32_t timeoutMs) {
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    String line;
+    uint32_t remaining = timeoutMs - (millis() - start);
+    uint32_t slice = remaining > 1000 ? 1000 : remaining;
+    if (slice == 0 || !bridgeReadLine(line, slice)) continue;
+    if (line == "OK FAST_READY") return true;
+    if (line.startsWith("ERR")) return false;
+  }
+  return false;
+}
+
+bool bridgeEnableFastBaud() {
+  if (MOTH_UART_FAST_BAUD == MOTH_UART_BAUD) return true;
+
+  bridgeSendLine("BAUD " + String(MOTH_UART_FAST_BAUD));
+  String line;
+  if (!bridgeReadExpectedLine("OK BAUD", line, MOTH_LINE_TIMEOUT_MS)) {
+    Serial.printf("AudioMoth fast UART is unavailable; continuing at %u baud (%s)\n",
+                  MOTH_UART_BAUD, line.length() ? line.c_str() : "no response");
+    bridgeFastBaudActive = false;
+    return true;
+  }
+
+  delay(20);
+  MothSerial.updateBaudRate(MOTH_UART_FAST_BAUD);
+  bridgeFastBaudActive = true;
+
+  if (!bridgeWaitFastReady(MOTH_LINE_TIMEOUT_MS) || !bridgePing()) {
+    Serial.println("AudioMoth fast UART training failed; abandoning this bridge session");
+    MothSerial.updateBaudRate(MOTH_UART_BAUD);
+    bridgeFastBaudActive = false;
+    bridgeFlushInput();
+    return false;
+  }
+
+  Serial.printf("AudioMoth UART running at %u baud\n", MOTH_UART_FAST_BAUD);
+  return true;
 }
 
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds) {
@@ -393,6 +435,13 @@ bool bridgeDelete(const String &path) {
 void bridgeDone() {
   bridgeSendLine("DONE");
   delay(20);
+}
+
+void bridgeRestoreDefaultBaud() {
+  if (!bridgeFastBaudActive) return;
+  MothSerial.updateBaudRate(MOTH_UART_BAUD);
+  bridgeFastBaudActive = false;
+  bridgeFlushInput();
 }
 
 uint32_t crc32Update(uint32_t crc, const uint8_t *data, uint32_t length) {
