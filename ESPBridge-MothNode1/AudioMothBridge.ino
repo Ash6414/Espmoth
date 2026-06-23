@@ -222,6 +222,10 @@ bool bridgeEnableFastBaud() {
   return true;
 }
 
+uint32_t bridgeTransferChunkBytes() {
+  return bridgeFastBaudActive ? MOTH_CHUNK_BYTES : MOTH_LEGACY_CHUNK_BYTES;
+}
+
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds) {
   String cmd = "TIME " + String(epochUtc) + " " + String(milliseconds);
   String line;
