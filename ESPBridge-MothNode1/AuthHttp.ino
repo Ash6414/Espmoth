@@ -69,7 +69,10 @@ String pathWithoutQuery(const String &pathAndQuery) {
 
 bool connectWiFi() {
   WiFi.mode(WIFI_STA);
-  WiFi.begin(cfgWifiSsid().c_str(), cfgWifiPassword().c_str());
+  if (!beginWiFiConnection(cfgWifiSsid(), cfgWifiSecurity(), cfgWifiIdentity(), cfgWifiUsername(), cfgWifiPassword())) {
+    Serial.println("Wi-Fi configuration failed");
+    return false;
+  }
 
   uint32_t start = millis();
   Serial.print("Connecting Wi-Fi");
@@ -83,11 +86,46 @@ bool connectWiFi() {
     Serial.print("Wi-Fi connected. IP: ");
     Serial.println(WiFi.localIP());
     Serial.printf("RSSI: %d dBm\n", WiFi.RSSI());
+    if (cfgBaseUrl().startsWith("https://") && estimatedEpochUtc() <= 1700000000UL && !syncClockFromNtp()) {
+      Serial.println("Secure server requires valid internet time; NTP sync failed");
+      return false;
+    }
     return true;
   }
 
   Serial.println("Wi-Fi failed");
   return false;
+}
+
+bool syncClockFromNtp() {
+  configTime(0, 0, "time.cloudflare.com", "pool.ntp.org", "time.google.com");
+  uint32_t start = millis();
+  Serial.print("Syncing internet time");
+  while (millis() - start < NTP_SYNC_TIMEOUT_MS) {
+    time_t now = time(nullptr);
+    if (now > 1700000000L) {
+      Serial.println();
+      Serial.printf("NTP epoch: %ld\n", (long)now);
+      return true;
+    }
+    delay(250);
+    Serial.print('.');
+  }
+  Serial.println();
+  return false;
+}
+
+bool beginHttpClient(HTTPClient &http, WiFiClient &plainClient, WiFiClientSecure &secureClient, const String &url) {
+  if (url.startsWith("https://")) {
+    if (estimatedEpochUtc() <= 1700000000UL) {
+      Serial.println("Refusing HTTPS without a valid clock");
+      return false;
+    }
+    secureClient.setCACert(TLS_ROOT_CA);
+    secureClient.setHandshakeTimeout(max(1UL, HTTP_TIMEOUT_MS / 1000UL));
+    return http.begin(secureClient, url);
+  }
+  return http.begin(plainClient, url);
 }
 
 void syncSystemClock(uint32_t epochUtc) {
@@ -109,12 +147,13 @@ uint32_t estimatedEpochUtc() {
 }
 
 long getServerTime(uint32_t *rttMsOut) {
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   String path = ENDPOINT_SERVER_TIME;
   String url = cfgBaseUrl() + path;
 
-  if (!http.begin(client, url)) return 0;
+  if (!beginHttpClient(http, plainClient, secureClient, url)) return 0;
   http.setTimeout(HTTP_TIMEOUT_MS);
 
   uint32_t t0 = millis();
@@ -155,10 +194,11 @@ void addAuthHeaders(HTTPClient &http, const String &method, const String &pathAn
 }
 
 bool signedPostJson(const String &path, const String &body, long serverEpoch, String &responseOut) {
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   String url = cfgBaseUrl() + path;
-  if (!http.begin(client, url)) return false;
+  if (!beginHttpClient(http, plainClient, secureClient, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/json");
@@ -176,10 +216,11 @@ bool signedPostJson(const String &path, const String &body, long serverEpoch, St
 }
 
 bool signedGet(const String &path, long serverEpoch, String &responseOut) {
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   String url = cfgBaseUrl() + path;
-  if (!http.begin(client, url)) return false;
+  if (!beginHttpClient(http, plainClient, secureClient, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
   addAuthHeaders(http, "GET", path, (const uint8_t *)"", 0, serverEpoch);
@@ -196,10 +237,11 @@ bool signedGet(const String &path, long serverEpoch, String &responseOut) {
 }
 
 bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut) {
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   String url = cfgBaseUrl() + pathAndQuery;
-  if (!http.begin(client, url)) return false;
+  if (!beginHttpClient(http, plainClient, secureClient, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/octet-stream");
@@ -219,10 +261,11 @@ bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bo
 }
 
 bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut) {
-  WiFiClient client;
+  WiFiClient plainClient;
+  WiFiClientSecure secureClient;
   HTTPClient http;
   String url = cfgBaseUrl() + pathAndQuery;
-  if (!http.begin(client, url)) return false;
+  if (!beginHttpClient(http, plainClient, secureClient, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
   http.addHeader("Content-Type", "application/octet-stream");
