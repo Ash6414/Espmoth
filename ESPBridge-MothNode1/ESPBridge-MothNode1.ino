@@ -108,6 +108,7 @@ void mothRequest(bool state);
 bool bridgeWaitReady(uint32_t timeoutMs);
 bool bridgePing();
 bool bridgeEnableFastBaud();
+uint32_t bridgeTransferChunkBytes();
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds);
 bool bridgeStatus(String &statusOut);
 bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *sdInfo);
