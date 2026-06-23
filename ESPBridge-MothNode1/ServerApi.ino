@@ -3,7 +3,6 @@ bool postHeartbeat(long serverEpoch, const PowerState &p, const UploadSummary &u
   doc["node_id"] = cfgNodeId();
   doc["battery_v"] = p.batteryV;
   doc["battery_percent"] = p.batteryPercent;
-  doc["solar_v"] = nullptr;
   doc["charging"] = p.charging;
   doc["charge_done"] = p.chargeDone;
   doc["recently_charged"] = p.charging || p.chargeDone;
@@ -27,6 +26,7 @@ bool postHeartbeat(long serverEpoch, const PowerState &p, const UploadSummary &u
   stats["files_uploaded_last"] = upload.filesUploaded;
   stats["files_deleted_last"] = upload.filesDeleted;
   stats["estimated_epoch"] = estimatedEpochUtc();
+  stats["battery_measurement"] = "pre_wifi_trimmed_average";
   if (upload.sd.valid) {
     stats["sd_total_mb"] = upload.sd.totalKb / 1024UL;
     stats["sd_free_mb"] = upload.sd.freeKb / 1024UL;
@@ -110,6 +110,11 @@ void pollCommands(long serverEpoch, const PowerState &p) {
         closeBridgeSession();
       }
       ackCommand(serverEpoch, id, ok ? status : String("AudioMoth status unavailable"));
+    } else if (type == "OPEN_SETUP") {
+      ackCommand(serverEpoch, id, "Restarting into Bat Node setup portal");
+      requestProvisioningOnNextBoot();
+      delay(600);
+      ESP.restart();
     } else {
       ackCommand(serverEpoch, id, "Unknown command ignored");
     }
@@ -190,7 +195,7 @@ bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &
   doc["local_file_id"] = file.localFileId;
   doc["filename"] = serverFilenameFromPath(file.path);
   doc["file_size_bytes"] = file.size;
-  doc["chunk_size"] = MOTH_CHUNK_BYTES;
+  doc["chunk_size"] = SERVER_UPLOAD_CHUNK_BYTES;
 
   String body;
   serializeJson(doc, body);
@@ -224,9 +229,9 @@ bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &
   session.resumeOffset = resp["next_missing_offset"] | 0;
 
   if (session.uploadId.length() == 0 || session.chunkSize == 0) return false;
-  if (session.chunkSize != MOTH_CHUNK_BYTES) {
-    Serial.printf("Server chunk size %lu does not match AudioMoth bridge chunk size %u\n",
-                  (unsigned long)session.chunkSize, MOTH_CHUNK_BYTES);
+  if (session.chunkSize != SERVER_UPLOAD_CHUNK_BYTES) {
+    Serial.printf("Server chunk size %lu does not match requested upload chunk size %u\n",
+                  (unsigned long)session.chunkSize, SERVER_UPLOAD_CHUNK_BYTES);
     return false;
   }
   if (session.resumeOffset > file.size) {
@@ -246,15 +251,16 @@ bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &
   return true;
 }
 
-bool serverUploadChunk(long serverEpoch, const UploadSession &session, const ChunkResult &chunk) {
+bool serverUploadChunk(long serverEpoch, const UploadSession &session, const uint8_t *data, uint32_t offset, uint32_t length) {
   if (!session.ok || session.uploadId.length() == 0 || session.chunkSize == 0) return false;
-  if (chunk.offset % session.chunkSize != 0) return false;
+  if (!data || length == 0 || length > session.chunkSize) return false;
+  if (offset % session.chunkSize != 0) return false;
 
-  uint32_t chunkIndex = chunk.offset / session.chunkSize;
+  uint32_t chunkIndex = offset / session.chunkSize;
   String path = String("/v1/uploads/") + session.uploadId + "/chunks/" + String(chunkIndex);
 
   String response;
-  return signedPutBinary(path, mothChunk, chunk.length, serverEpoch, response);
+  return signedPutBinary(path, data, length, serverEpoch, response);
 }
 
 bool serverFinishFile(long serverEpoch, const UploadSession &session) {
