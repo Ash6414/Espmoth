@@ -1,16 +1,17 @@
-# ESPBridge-MothNode1
+# Moth_Node_ESPBridge
 
 ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 
 ## What this sketch does
 
-- Connects to Wi-Fi only during wake windows.
+- Connects to personal, WPA2-Enterprise username/password, or open Wi-Fi during wake windows.
+- Verifies HTTPS servers using a trusted root certificate and NTP time bootstrap.
 - Fetches signed server time from `/v1/public/server_time`.
 - Sends HMAC-signed heartbeat and time-check messages.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Talks to AudioMoth over the ESP bridge UART at 115200 baud.
+- Starts each AudioMoth session at 115200 baud, then negotiates a trained 1 Mbaud data link when supported.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -52,7 +53,7 @@ The ESP32 UART setup must leave GPIO32/GPIO33 owned by `Serial2` after `Serial2.
 
 ## Arduino setup
 
-1. Open the `ESPBridge-MothNode1` folder in Arduino IDE.
+1. Open the `Moth_Node_ESPBridge` folder in Arduino IDE.
 2. Select `ESP32 Dev Module`.
 3. Install `ArduinoJson`.
 4. Upload the same sketch to every ESP32.
@@ -60,11 +61,11 @@ The ESP32 UART setup must leave GPIO32/GPIO33 owned by `Serial2` after `Serial2.
 Arduino CLI equivalents:
 
 ```powershell
-arduino-cli compile --fqbn esp32:esp32:esp32 ".\ESPBridge-MothNode1"
-arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32 ".\ESPBridge-MothNode1"
+arduino-cli compile --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
+arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
 ```
 
-## First-boot setup portal
+## Setup and field Wi-Fi recovery
 
 The firmware stores node setup in ESP32 NVS flash. Normal boots skip setup when saved credentials exist. If required credentials are missing, the ESP32 starts a local setup Wi-Fi network:
 
@@ -74,20 +75,37 @@ Password: batnode-setup
 Setup page: http://192.168.4.1
 ```
 
-The setup page has two paths:
+Choose the field Wi-Fi security mode, enter the public HTTPS server URL, and
+submit enrollment. The dashboard shows the physical ESP32 under **Add Nodes**.
+Press **Approve** and the node saves its generated credentials automatically.
+No shared provisioning token or copied device secret is required.
+The ESP32 polls approval itself every three seconds; the phone or laptop may
+leave the setup access point after the request is submitted.
 
-1. Automatic provisioning: enter field Wi-Fi, server URL, and the server `PROVISIONING_TOKEN`. The server creates the node ID, key ID, and device secret, then the ESP32 saves them.
-2. Manual credentials: paste node ID, key ID, and device secret if you already made them with `manage_node.py`.
+WPA2-Enterprise setup accepts outer identity, username, and password. Networks
+that require a browser captive portal are not supported for unattended nodes.
 
-Default server URL shown by the portal:
+If a configured node cannot join its saved Wi-Fi, it automatically opens the
+same `BatNode-XXXXXX` access point for ten minutes. Join it with the password
+`batnode-setup`; the captive setup page should open automatically, with
+`http://192.168.4.1` as the manual fallback. Enter the replacement personal,
+enterprise, or open-network settings and press **Save Wi-Fi and reconnect**.
+This Wi-Fi-only path preserves the node ID, server URL, key, device secret, and
+dashboard history. It does not require another approval or firmware flash.
 
-```text
-http://184.83.3.35:8000
-```
+The server links the ESP32 eFuse hardware ID to its node record. When settings
+are erased or firmware is reflashed, approving the same hardware preserves its
+node ID and history while rotating the device credential. During the first
+migration from older firmware, select the existing node ID once in the approval
+screen.
 
-That public address only works after port forwarding or a tunnel exposes the Pi server. On the same LAN, use the Pi LAN IP instead.
+For internet deployments, use the stable HTTPS URL printed by the server's
+`StartInternetAccess.cmd` Tailscale helper. Plain HTTP remains available for
+bench testing on a trusted local network.
 
-To force setup again later, clear ESP32 NVS with the Arduino IDE erase-flash option or change `PROVISION_FORCE_PIN` in `Config.h` to a GPIO you can pull low at boot.
+To open setup while the current network still works, send the `OPEN_SETUP`
+dashboard command. Erasing NVS is reserved for intentionally removing the node
+identity and starting enrollment again.
 
 ## Server endpoints needed for WAV upload
 
@@ -116,13 +134,26 @@ GET  /v1/nodes/{NODE_ID}/delete_authorization?manifest_id=...
 POST /v1/nodes/{NODE_ID}/delete_confirm
 ```
 
-The chunk endpoint receives raw `application/octet-stream` bytes. The ESP asks the server to use the AudioMoth bridge chunk size (`MOTH_CHUNK_BYTES`, currently 4096 bytes), so each UART `GET` payload maps directly to one server chunk. The ESP signs only the URL path because MothServer authenticates `request.url.path`.
+The chunk endpoint receives raw `application/octet-stream` bytes. AudioMoth
+provides CRC-checked 8192-byte UART payloads. The ESP combines up to eight of
+them in a heap-allocated 65536-byte buffer and sends one signed server PUT.
+This keeps UART reads small enough for AudioMoth RAM while cutting HTTPS request
+overhead by 16 times compared with the old 4096-byte one-request-per-read path.
+The ESP signs only the URL path because MothServer authenticates
+`request.url.path`.
 
 If an upload is interrupted, `/v1/uploads/init` returns compact resume fields: `total_chunks`, `next_missing_chunk`, `next_missing_offset`, and `received_chunk_count`. The ESP32 starts the next `GET` at `next_missing_offset`; the server still treats duplicate chunks as idempotent retries, but normal restarts avoid re-sending old data.
 
 When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD total_kb=... free_kb=...` line before file entries. The ESP32 logs that size, posts `sd_total_kb`, `sd_free_kb`, and `sd_free_mb` with the manifest, and reports `sd_free_mb` on the next heartbeat.
 
-The matching AudioMoth firmware uses the EFM32 `UART1` hardware route on PB9/PB10, borrowed from the stock GPS interface resources. GPS support is disabled in this bridge firmware so the ESP bridge owns PA7, PA8, PB9, PB10, and UART1 for reliable 115200-baud transfer. The USB debug console on the ESP32 also runs at 115200 baud. Keep AudioMoth schedules configured with idle windows when you want full SD transfer, or use the `UPLOAD_NOW` command while the node is charged.
+The matching AudioMoth firmware uses the EFM32 `UART1` hardware route on
+PB9/PB10, borrowed from the stock GPS interface resources. GPS support is
+disabled so the bridge owns PA7, PA8, PB9, PB10, and UART1. Control starts at
+115200 baud for reliable discovery. The ESP requests 1 Mbaud, AudioMoth waits
+40 ms, transmits a 1024-byte `0x55` training preamble and repeated
+`OK FAST_READY` markers, and the ESP verifies the link with `PING`. Older
+AudioMoth bridge firmware remains usable at 115200. The ESP USB debug console
+continues to use 115200 baud.
 
 ## Command types supported
 
@@ -131,9 +162,11 @@ PING
 UPLOAD_NOW
 SYNC_MOTH_TIME
 MOTH_STATUS
+OPEN_SETUP
 ```
 
 `UPLOAD_NOW` bypasses the solar/charging requirement, but still refuses upload below `MIN_UPLOAD_BATTERY_V`.
+`OPEN_SETUP` preserves the current node identity and restarts once into the local setup portal so Wi-Fi or server URL can be changed.
 
 ## One-command bridge test
 
