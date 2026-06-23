@@ -236,6 +236,7 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
 
   uint32_t offset = session.resumeOffset;
   uint32_t transferStartMs = millis();
+  uint32_t uartChunkBytes = bridgeTransferChunkBytes();
   while (offset < file.size) {
     uint32_t remaining = file.size - offset;
     uint32_t batchBytes = remaining > session.chunkSize ? session.chunkSize : remaining;
@@ -243,7 +244,7 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
 
     while (filled < batchBytes) {
       uint32_t uartRemaining = batchBytes - filled;
-      uint32_t requestBytes = uartRemaining > MOTH_CHUNK_BYTES ? MOTH_CHUNK_BYTES : uartRemaining;
+      uint32_t requestBytes = uartRemaining > uartChunkBytes ? uartChunkBytes : uartRemaining;
       uint32_t uartOffset = offset + filled;
 
       ChunkResult chunk;
