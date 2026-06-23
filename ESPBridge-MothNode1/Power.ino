@@ -7,8 +7,27 @@ void initPowerPins() {
 }
 
 float readBatteryVoltage() {
-  uint32_t mv = analogReadMilliVolts(PIN_BATTERY_ADC);
-  return (mv / 1000.0f) * BATTERY_DIVIDER_RATIO * BATTERY_CAL_FACTOR;
+  for (uint8_t i = 0; i < BATTERY_SETTLE_READS; i++) {
+    analogReadMilliVolts(PIN_BATTERY_ADC);
+    delay(BATTERY_SAMPLE_DELAY_MS);
+  }
+
+  uint32_t totalMv = 0;
+  uint32_t lowestMv = UINT32_MAX;
+  uint32_t highestMv = 0;
+  for (uint8_t i = 0; i < BATTERY_SAMPLE_COUNT; i++) {
+    uint32_t mv = analogReadMilliVolts(PIN_BATTERY_ADC);
+    totalMv += mv;
+    if (mv < lowestMv) lowestMv = mv;
+    if (mv > highestMv) highestMv = mv;
+    delay(BATTERY_SAMPLE_DELAY_MS);
+  }
+
+  // Drop one high and one low conversion so a brief ADC/current transient
+  // cannot become the reported resting battery value.
+  uint32_t trimmedMv = totalMv - lowestMv - highestMv;
+  float averageMv = trimmedMv / (float)(BATTERY_SAMPLE_COUNT - 2);
+  return (averageMv / 1000.0f) * BATTERY_DIVIDER_RATIO * BATTERY_CAL_FACTOR;
 }
 
 PowerState readPowerState() {
