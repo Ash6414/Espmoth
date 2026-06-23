@@ -197,6 +197,9 @@ void setup() {
   preWifiPowerValid = true;
   Serial.printf("Pre-Wi-Fi battery: %.3f V, %.1f%%, CHRG=%d, DONE=%d\n",
                 power.batteryV, power.batteryPercent, power.charging, power.chargeDone);
+  if (power.batteryV < BATTERY_SENSE_INVALID_BELOW_V) {
+    Serial.println("Battery sense is absent/invalid; allowing Wi-Fi setup but disabling file upload.");
+  }
 
   if (!powerAllowsWiFi(power)) {
     lastUpload = {UPLOAD_SKIPPED_POWER, 0, 0, 0, "battery below Wi-Fi threshold"};
