@@ -66,6 +66,7 @@
 #define MIN_UPLOAD_BATTERY_V      3.60f
 #define MIN_MOTH_TIME_SYNC_V      3.40f
 #define MIN_ACTIVE_BATTERY_V      3.25f
+#define BATTERY_SENSE_INVALID_BELOW_V  1.00f
 
 // Require charging/DONE for automatic WAV uploads. Command UPLOAD_NOW bypasses this but not MIN_UPLOAD_BATTERY_V.
 #define REQUIRE_CHARGING_FOR_AUTO_UPLOAD  false
