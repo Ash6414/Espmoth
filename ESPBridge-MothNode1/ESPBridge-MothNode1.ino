@@ -22,14 +22,17 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <WiFiClient.h>
+#include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
 #include <time.h>
 #include <sys/time.h>
 #include "mbedtls/md.h"
 #include "mbedtls/sha256.h"
 #include "driver/rtc_io.h"
+#include "esp_mac.h"
 
 #include "Config.h"
+#include "TlsConfig.h"
 #include "Types.h"
 
 HardwareSerial MothSerial(2);
@@ -45,8 +48,11 @@ uint32_t bootServerMillis = 0;
 bool bootHasFreshServerTime = false;
 
 uint8_t mothChunk[MOTH_CHUNK_BYTES];
+uint8_t *serverChunk = nullptr;
 String lastUploadMessage = "boot";
 UploadSummary lastUpload = {UPLOAD_NOT_ATTEMPTED, 0, 0, 0, "not attempted"};
+PowerState preWifiPowerState = {0.0f, 0.0f, false, false};
+bool preWifiPowerValid = false;
 
 // Power.ino
 void initPowerPins();
@@ -67,6 +73,8 @@ String randomNonce();
 String urlEncode(const String &s);
 String pathWithoutQuery(const String &pathAndQuery);
 bool connectWiFi();
+bool syncClockFromNtp();
+bool beginHttpClient(HTTPClient &http, WiFiClient &plainClient, WiFiClientSecure &secureClient, const String &url);
 void syncSystemClock(uint32_t epochUtc);
 uint32_t estimatedEpochUtc();
 long getServerTime(uint32_t *rttMsOut);
@@ -80,9 +88,14 @@ bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bod
 bool loadNodeConfig();
 bool nodeConfigReady();
 bool provisioningForced();
-void runProvisioningPortal();
+void requestProvisioningOnNextBoot();
+void runProvisioningPortal(bool recoveryMode = false);
 const String &cfgWifiSsid();
 const String &cfgWifiPassword();
+const String &cfgWifiSecurity();
+const String &cfgWifiIdentity();
+const String &cfgWifiUsername();
+bool beginWiFiConnection(const String &ssid, const String &securityMode, const String &identity, const String &username, const String &password);
 const String &cfgBaseUrl();
 const String &cfgNodeId();
 const String &cfgKeyId();
@@ -94,12 +107,14 @@ bool mothBusy();
 void mothRequest(bool state);
 bool bridgeWaitReady(uint32_t timeoutMs);
 bool bridgePing();
+bool bridgeEnableFastBaud();
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds);
 bool bridgeStatus(String &statusOut);
 bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *sdInfo);
 bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, ChunkResult &result);
 bool bridgeDelete(const String &path);
 void bridgeDone();
+void bridgeRestoreDefaultBaud();
 uint32_t crc32Update(uint32_t crc, const uint8_t *data, uint32_t length);
 
 // ServerApi.ino
@@ -112,7 +127,7 @@ String serverFilenameFromPath(const String &path);
 uint32_t serverLocalFileId(const MothFile &file);
 bool serverPostManifest(long serverEpoch, MothFile *files, size_t fileCount, const MothSdInfo &sdInfo, String &manifestIdOut);
 bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &file, UploadSession &session);
-bool serverUploadChunk(long serverEpoch, const UploadSession &session, const ChunkResult &chunk);
+bool serverUploadChunk(long serverEpoch, const UploadSession &session, const uint8_t *data, uint32_t offset, uint32_t length);
 bool serverFinishFile(long serverEpoch, const UploadSession &session);
 bool serverFetchDeleteAuthorization(long serverEpoch, const String &manifestId, MothFile *files, size_t fileCount, DeleteCandidate *candidates, size_t maxCandidates, size_t &candidateCount, String &authorizationId);
 bool serverConfirmDeletes(long serverEpoch, const String &authorizationId, DeleteCandidate *candidates, size_t candidateCount);
@@ -158,14 +173,13 @@ void setup() {
 
   bool haveConfig = loadNodeConfig();
   if (!haveConfig || provisioningForced()) {
-    runProvisioningPortal();
+    runProvisioningPortal(false);
   }
 
   initPowerPins();
   initMothBridge();
 
   esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
-  PowerState power = readPowerState();
 
   Serial.println();
   Serial.println("=== ESP32 AudioMoth bridge node ===");
@@ -173,10 +187,15 @@ void setup() {
   Serial.printf("Server: %s\n", cfgBaseUrl().c_str());
   Serial.printf("Boot count: %lu\n", (unsigned long)rtcBootCounter);
   Serial.printf("Wake cause: %d\n", (int)wakeCause);
-  Serial.printf("Battery: %.3f V, %.1f%%, CHRG=%d, DONE=%d\n",
-                power.batteryV, power.batteryPercent, power.charging, power.chargeDone);
   Serial.printf("MOTH_BUSY=%d\n", mothBusy());
   Serial.printf("ESP_REQ=%d\n", digitalRead(PIN_MOTH_REQ));
+
+  Serial.println("Sampling resting battery before Wi-Fi...");
+  PowerState power = readPowerState();
+  preWifiPowerState = power;
+  preWifiPowerValid = true;
+  Serial.printf("Pre-Wi-Fi battery: %.3f V, %.1f%%, CHRG=%d, DONE=%d\n",
+                power.batteryV, power.batteryPercent, power.charging, power.chargeDone);
 
   if (!powerAllowsWiFi(power)) {
     lastUpload = {UPLOAD_SKIPPED_POWER, 0, 0, 0, "battery below Wi-Fi threshold"};
@@ -187,6 +206,10 @@ void setup() {
   long serverEpoch = 0;
   if (!fetchFreshServerTimeAndSync(&rttMs, &serverEpoch)) {
     lastUpload = {UPLOAD_NOT_ATTEMPTED, 0, 0, 0, "server time unavailable"};
+    if (WiFi.status() != WL_CONNECTED && nodeConfigReady()) {
+      Serial.println("Saved Wi-Fi is unavailable; opening the recovery portal.");
+      runProvisioningPortal(true);
+    }
     deepSleepMinutes(DEFAULT_SLEEP_MINUTES);
   }
 
@@ -194,7 +217,6 @@ void setup() {
   postHeartbeat(serverEpoch, power, lastUpload);
   pollCommands(serverEpoch, power);
 
-  power = readPowerState();
   if (powerAllowsUpload(power, false)) {
     lastUpload = runAudioMothUploadSession(serverEpoch, false);
     if (lastUpload.code == UPLOAD_SUCCESS) rtcSuccessfulUploads += 1;
