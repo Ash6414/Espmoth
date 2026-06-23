@@ -49,10 +49,13 @@ float estimateBatteryPercent(float v) {
 }
 
 bool powerAllowsWiFi(const PowerState &p) {
-  return p.batteryV >= MIN_WIFI_BATTERY_V;
+  // A running ESP32 cannot be powered by a sub-1 V single-cell pack. Treat
+  // this as an absent sense wire during USB setup so Wi-Fi can be repaired.
+  return p.batteryV < BATTERY_SENSE_INVALID_BELOW_V || p.batteryV >= MIN_WIFI_BATTERY_V;
 }
 
 bool powerAllowsUpload(const PowerState &p, bool forced) {
+  if (p.batteryV < BATTERY_SENSE_INVALID_BELOW_V) return false;
   if (p.batteryV < MIN_UPLOAD_BATTERY_V) return false;
   if (forced) return true;
 #if REQUIRE_CHARGING_FOR_AUTO_UPLOAD
