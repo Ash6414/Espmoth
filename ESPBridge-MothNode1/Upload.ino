@@ -37,6 +37,11 @@ bool openBridgeSession(long serverEpoch) {
     return false;
   }
 
+  if (!bridgeEnableFastBaud()) {
+    mothRequest(false);
+    return false;
+  }
+
   uint32_t epoch = bridgeEpochNow(serverEpoch);
   if (epoch > 1700000000UL) {
     bridgeSetTime(epoch, 0);
@@ -81,11 +86,12 @@ bool openBridgeUploadSession(long serverEpoch) {
 void closeBridgeSession() {
   bridgeDone();
   delay(50);
+  bridgeRestoreDefaultBaud();
   mothRequest(false);
 }
 
 bool syncMothTimeOnly(long serverEpoch) {
-  PowerState p = readPowerState();
+  PowerState p = preWifiPowerValid ? preWifiPowerState : readPowerState();
   if (p.batteryV < MIN_MOTH_TIME_SYNC_V) return false;
 
   if (!openBridgeSession(serverEpoch)) return false;
@@ -104,7 +110,7 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   summary.message = "upload not attempted";
   summary.sd = {false, 0, 0};
 
-  PowerState p = readPowerState();
+  PowerState p = preWifiPowerValid ? preWifiPowerState : readPowerState();
   if (!powerAllowsUpload(p, forced)) {
     summary.code = UPLOAD_SKIPPED_POWER;
     summary.message = "upload skipped by power policy";
@@ -133,7 +139,7 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   if (fileCount == 0) {
     closeBridgeSession();
     summary.code = UPLOAD_NO_FILES;
-    summary.message = "no WAV files listed";
+    summary.message = "no files listed";
     return summary;
   }
 
@@ -220,32 +226,51 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
     return true;
   }
 
-  uint32_t offset = session.resumeOffset;
-  while (offset < file.size) {
-    uint32_t remaining = file.size - offset;
-    uint32_t requestBytes = remaining > session.chunkSize ? session.chunkSize : remaining;
-
-    ChunkResult chunk;
-    bool gotChunk = bridgeGetChunk(file.path, offset, requestBytes, chunk);
-    if (!gotChunk || !chunk.ok || chunk.length == 0 || chunk.length != requestBytes) {
-      Serial.printf("GET failed at offset %lu\n", (unsigned long)offset);
-      bridgeFailure = true;
+  if (!serverChunk) {
+    serverChunk = (uint8_t *)malloc(SERVER_UPLOAD_CHUNK_BYTES);
+    if (!serverChunk) {
+      Serial.printf("Could not allocate %u-byte upload buffer\n", SERVER_UPLOAD_CHUNK_BYTES);
       return false;
     }
+  }
 
-    if (!serverUploadChunk(serverEpoch, session, chunk)) {
+  uint32_t offset = session.resumeOffset;
+  uint32_t transferStartMs = millis();
+  while (offset < file.size) {
+    uint32_t remaining = file.size - offset;
+    uint32_t batchBytes = remaining > session.chunkSize ? session.chunkSize : remaining;
+    uint32_t filled = 0;
+
+    while (filled < batchBytes) {
+      uint32_t uartRemaining = batchBytes - filled;
+      uint32_t requestBytes = uartRemaining > MOTH_CHUNK_BYTES ? MOTH_CHUNK_BYTES : uartRemaining;
+      uint32_t uartOffset = offset + filled;
+
+      ChunkResult chunk;
+      bool gotChunk = bridgeGetChunk(file.path, uartOffset, requestBytes, chunk);
+      if (!gotChunk || !chunk.ok || chunk.offset != uartOffset || chunk.length == 0 || chunk.length != requestBytes) {
+        Serial.printf("GET failed at offset %lu\n", (unsigned long)uartOffset);
+        bridgeFailure = true;
+        return false;
+      }
+
+      memcpy(serverChunk + filled, mothChunk, chunk.length);
+      filled += chunk.length;
+    }
+
+    if (!serverUploadChunk(serverEpoch, session, serverChunk, offset, batchBytes)) {
       Serial.printf("serverUploadChunk failed at offset %lu\n", (unsigned long)offset);
       return false;
     }
 
-    offset += chunk.length;
-    if ((offset % (16UL * 1024UL)) == 0 || offset >= file.size) {
+    offset += batchBytes;
+    if ((offset % (256UL * 1024UL)) == 0 || offset >= file.size) {
       Serial.printf("Progress %s: %lu/%lu\n", file.path.c_str(), (unsigned long)offset, (unsigned long)file.size);
     }
 
     PowerState p = readPowerState();
-    if (p.batteryV < MIN_WIFI_BATTERY_V) {
-      Serial.println("Battery dropped below Wi-Fi threshold during upload");
+    if (p.batteryV < MIN_ACTIVE_BATTERY_V) {
+      Serial.printf("Battery under load fell below emergency cutoff: %.3f V\n", p.batteryV);
       return false;
     }
   }
@@ -254,6 +279,11 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
     Serial.println("serverFinishFile failed");
     return false;
   }
+
+  uint32_t elapsedMs = millis() - transferStartMs;
+  float kibPerSecond = elapsedMs > 0 ? ((float)(file.size - session.resumeOffset) * 1000.0f) / (1024.0f * (float)elapsedMs) : 0.0f;
+  Serial.printf("Completed %s in %.1f s (%.1f KiB/s)\n",
+                file.path.c_str(), elapsedMs / 1000.0f, kibPerSecond);
 
   return true;
 }
