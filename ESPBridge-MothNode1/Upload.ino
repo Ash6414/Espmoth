@@ -227,11 +227,15 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
   }
 
   if (!serverChunk) {
+    Serial.printf("Allocating %u-byte server upload buffer: free_heap=%u max_block=%u\n",
+                  SERVER_UPLOAD_CHUNK_BYTES, ESP.getFreeHeap(), ESP.getMaxAllocHeap());
     serverChunk = (uint8_t *)malloc(SERVER_UPLOAD_CHUNK_BYTES);
     if (!serverChunk) {
       Serial.printf("Could not allocate %u-byte upload buffer\n", SERVER_UPLOAD_CHUNK_BYTES);
       return false;
     }
+    Serial.printf("Server upload buffer ready: free_heap=%u max_block=%u\n",
+                  ESP.getFreeHeap(), ESP.getMaxAllocHeap());
   }
 
   uint32_t offset = session.resumeOffset;
