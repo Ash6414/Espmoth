@@ -251,7 +251,8 @@ bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &
   return true;
 }
 
-bool serverUploadChunk(long serverEpoch, const UploadSession &session, const uint8_t *data, uint32_t offset, uint32_t length) {
+bool serverUploadChunk(long serverEpoch, const UploadSession &session, const uint8_t *data, uint32_t offset, uint32_t length, uint32_t &serverProcessMs) {
+  serverProcessMs = 0;
   if (!session.ok || session.uploadId.length() == 0 || session.chunkSize == 0) return false;
   if (!data || length == 0 || length > session.chunkSize) return false;
   if (offset % session.chunkSize != 0) return false;
@@ -260,7 +261,13 @@ bool serverUploadChunk(long serverEpoch, const UploadSession &session, const uin
   String path = String("/v1/uploads/") + session.uploadId + "/chunks/" + String(chunkIndex);
 
   String response;
-  return signedPutBinary(path, data, length, serverEpoch, response);
+  if (!signedPutBinary(path, data, length, serverEpoch, response)) return false;
+
+  StaticJsonDocument<128> doc;
+  if (!deserializeJson(doc, response)) {
+    serverProcessMs = doc["server_ms"] | 0;
+  }
+  return true;
 }
 
 bool serverFinishFile(long serverEpoch, const UploadSession &session) {
