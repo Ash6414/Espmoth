@@ -128,7 +128,7 @@ String serverFilenameFromPath(const String &path);
 uint32_t serverLocalFileId(const MothFile &file);
 bool serverPostManifest(long serverEpoch, MothFile *files, size_t fileCount, const MothSdInfo &sdInfo, String &manifestIdOut);
 bool serverInitFile(long serverEpoch, const String &manifestId, const MothFile &file, UploadSession &session);
-bool serverUploadChunk(long serverEpoch, const UploadSession &session, const uint8_t *data, uint32_t offset, uint32_t length);
+bool serverUploadChunk(long serverEpoch, const UploadSession &session, const uint8_t *data, uint32_t offset, uint32_t length, uint32_t &serverProcessMs);
 bool serverFinishFile(long serverEpoch, const UploadSession &session);
 bool serverFetchDeleteAuthorization(long serverEpoch, const String &manifestId, MothFile *files, size_t fileCount, DeleteCandidate *candidates, size_t maxCandidates, size_t &candidateCount, String &authorizationId);
 bool serverConfirmDeletes(long serverEpoch, const String &authorizationId, DeleteCandidate *candidates, size_t candidateCount);
