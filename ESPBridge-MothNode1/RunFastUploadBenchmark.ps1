@@ -75,13 +75,13 @@ try {
 }
 
 $lines | Set-Content -LiteralPath $logPath -Encoding UTF8
-$baudLine = $lines | Where-Object { $_ -like "AudioMoth UART running at*" } | Select-Object -Last 1
+$baudLine = $lines | Where-Object { $_ -like "AudioMoth fast payload mode armed at*" } | Select-Object -Last 1
 $results = $lines | Where-Object { $_ -like "Completed *end_to_end=*" }
 $listFailure = $lines | Where-Object { $_ -like "AudioMoth LIST *" } | Select-Object -Last 1
 
 Write-Host ""
 Write-Host "=== Fast upload benchmark ==="
-if ($baudLine) { Write-Host $baudLine } else { Write-Host "Fast UART negotiation was not observed." }
+if ($baudLine) { Write-Host $baudLine } else { Write-Host "Fast payload negotiation was not observed." }
 if ($results) {
   $results | ForEach-Object { Write-Host $_ }
   exit 0
