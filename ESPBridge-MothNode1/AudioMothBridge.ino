@@ -83,7 +83,7 @@ bool bridgeReadBytes(uint8_t *dest, uint32_t length, uint32_t timeoutMs) {
 }
 
 bool bridgeIsAsyncLine(const String &line) {
-  return line == "OK BRIDGE_READY" || line == "OK PONG";
+  return line == "OK BRIDGE_READY" || line == "OK FAST_READY" || line == "OK PONG";
 }
 
 bool bridgeReadExpectedLine(const char *expectedPrefix, String &lineOut, uint32_t timeoutMs) {
@@ -177,21 +177,35 @@ bool bridgeExpectResponse(const String &cmd, const char *expectedPrefix, String 
 }
 
 bool bridgePing() {
-  String line;
-  return bridgeExpectResponse("PING", "OK PONG", &line);
+  for (uint8_t attempt = 1; attempt <= 4; attempt++) {
+    bridgeSendLine("PING");
+    String line;
+    if (bridgeReadExpectedLine("OK PONG", line, 1000)) return true;
+    delay(75);
+  }
+  return false;
 }
 
 bool bridgeWaitFastReady(uint32_t timeoutMs) {
   uint32_t start = millis();
+  uint32_t lastMarkerMs = 0;
+  bool markerSeen = false;
   while (millis() - start < timeoutMs) {
+    if (markerSeen && millis() - lastMarkerMs >= 25) return true;
+
     String line;
     uint32_t remaining = timeoutMs - (millis() - start);
-    uint32_t slice = remaining > 1000 ? 1000 : remaining;
+    uint32_t sliceLimit = markerSeen ? 25 : 1000;
+    uint32_t slice = remaining > sliceLimit ? sliceLimit : remaining;
     if (slice == 0 || !bridgeReadLine(line, slice)) continue;
-    if (line == "OK FAST_READY") return true;
+    if (line == "OK FAST_READY") {
+      markerSeen = true;
+      lastMarkerMs = millis();
+      continue;
+    }
     if (line.startsWith("ERR")) return false;
   }
-  return false;
+  return markerSeen;
 }
 
 bool bridgeEnableFastBaud() {
@@ -210,7 +224,22 @@ bool bridgeEnableFastBaud() {
   MothSerial.updateBaudRate(MOTH_UART_FAST_BAUD);
   bridgeFastBaudActive = true;
 
-  if (!bridgeWaitFastReady(MOTH_LINE_TIMEOUT_MS) || !bridgePing()) {
+  uint32_t fastRxStart = bridgeRawBytesRead;
+  uint32_t fastLinesStart = bridgeLinesRead;
+  bool fastReady = bridgeWaitFastReady(MOTH_LINE_TIMEOUT_MS);
+  uint32_t fastRxBytes = bridgeRawBytesRead - fastRxStart;
+  uint32_t fastRxLines = bridgeLinesRead - fastLinesStart;
+  if (!fastReady) {
+    Serial.printf("AudioMoth fast UART marker missing at %u baud; rx_bytes=%lu rx_lines=%lu\n",
+                  MOTH_UART_FAST_BAUD, (unsigned long)fastRxBytes, (unsigned long)fastRxLines);
+  }
+
+  if (fastReady) delay(50);
+  bool fastPing = fastReady && bridgePing();
+  if (!fastReady || !fastPing) {
+    if (fastReady) {
+      Serial.printf("AudioMoth fast UART marker arrived at %u baud, but PING failed\n", MOTH_UART_FAST_BAUD);
+    }
     Serial.println("AudioMoth fast UART training failed; abandoning this bridge session");
     MothSerial.updateBaudRate(MOTH_UART_BAUD);
     bridgeFastBaudActive = false;
