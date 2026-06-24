@@ -191,3 +191,16 @@ Bridge READY after ...
 ```
 
 If it prints `rx_bytes=0`, `busy_low_seen=0`, and `esp_req=1`, the ESP32 is asserting the request pin and sending UART pings but AudioMoth is not replying. In that case, check that AudioMoth is flashed with the request-service bin and is actually running in CUSTOM mode.
+
+## Upload throughput benchmark
+
+After placing at least one not-yet-uploaded recording on the AudioMoth SD card,
+run:
+
+```bat
+RunFastUploadBenchmark.cmd
+```
+
+The benchmark queues `UPLOAD_NOW`, resets COM7, and records the negotiated UART
+rate plus separate UART, server, and end-to-end throughput. Logs are written to
+`logs/fast-upload-*.log`.
