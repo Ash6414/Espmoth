@@ -9,6 +9,7 @@ void initMothBridge() {
 
   /* Leave the configured UART pins owned by UART2 after begin(). Calling pinMode() on
      either UART pin after this can detach the ESP32 pin matrix from Serial2. */
+  MothSerial.setRxBufferSize(MOTH_CHUNK_BYTES + 1024);
   MothSerial.begin(MOTH_UART_BAUD, SERIAL_8N1, PIN_MOTH_UART_RX, PIN_MOTH_UART_TX);
   while (MothSerial.available()) MothSerial.read();
 }
@@ -80,6 +81,28 @@ bool bridgeReadBytes(uint8_t *dest, uint32_t length, uint32_t timeoutMs) {
     delay(1);
   }
   return got == length;
+}
+
+bool bridgeReadFastMagic(uint32_t timeoutMs) {
+  static const uint8_t magic[] = {0xA5, 0x5A, 0xC3, 0x3C};
+  uint32_t matched = 0;
+  uint32_t start = millis();
+
+  while (millis() - start < timeoutMs) {
+    while (MothSerial.available()) {
+      uint8_t byte = (uint8_t)MothSerial.read();
+      bridgeRawBytesRead += 1;
+      if (byte == magic[matched]) {
+        matched += 1;
+        if (matched == sizeof(magic)) return true;
+      } else {
+        matched = byte == magic[0] ? 1 : 0;
+      }
+    }
+    delay(1);
+  }
+
+  return false;
 }
 
 bool bridgeIsAsyncLine(const String &line) {
@@ -186,68 +209,30 @@ bool bridgePing() {
   return false;
 }
 
-bool bridgeWaitFastReady(uint32_t timeoutMs) {
-  uint32_t start = millis();
-  uint32_t lastMarkerMs = 0;
-  bool markerSeen = false;
-  while (millis() - start < timeoutMs) {
-    if (markerSeen && millis() - lastMarkerMs >= 25) return true;
-
-    String line;
-    uint32_t remaining = timeoutMs - (millis() - start);
-    uint32_t sliceLimit = markerSeen ? 25 : 1000;
-    uint32_t slice = remaining > sliceLimit ? sliceLimit : remaining;
-    if (slice == 0 || !bridgeReadLine(line, slice)) continue;
-    if (line == "OK FAST_READY") {
-      markerSeen = true;
-      lastMarkerMs = millis();
-      continue;
-    }
-    if (line.startsWith("ERR")) return false;
-  }
-  return markerSeen;
-}
-
 bool bridgeEnableFastBaud() {
+  bridgeFastBaudActive = false;
   if (MOTH_UART_FAST_BAUD == MOTH_UART_BAUD) return true;
 
-  bridgeSendLine("BAUD " + String(MOTH_UART_FAST_BAUD));
+  bridgeSendLine("FASTCAP " + String(MOTH_UART_FAST_BAUD));
   String line;
-  if (!bridgeReadExpectedLine("OK BAUD", line, MOTH_LINE_TIMEOUT_MS)) {
-    Serial.printf("AudioMoth fast UART is unavailable; continuing at %u baud (%s)\n",
+  if (!bridgeReadExpectedLine("OK FASTCAP", line, MOTH_LINE_TIMEOUT_MS)) {
+    Serial.printf("AudioMoth fast payload mode is unavailable; continuing at %u baud (%s)\n",
                   MOTH_UART_BAUD, line.length() ? line.c_str() : "no response");
-    bridgeFastBaudActive = false;
+    bridgeFlushInput();
     return true;
   }
 
-  delay(20);
-  MothSerial.updateBaudRate(MOTH_UART_FAST_BAUD);
+  unsigned long negotiatedBaud = 0;
+  unsigned int maxChunk = 0;
+  if (sscanf(line.c_str(), "OK FASTCAP %lu %u", &negotiatedBaud, &maxChunk) != 2 ||
+      negotiatedBaud != MOTH_UART_FAST_BAUD || maxChunk < MOTH_CHUNK_BYTES) {
+    Serial.printf("AudioMoth returned an invalid fast payload capability: %s\n", line.c_str());
+    return true;
+  }
+
   bridgeFastBaudActive = true;
-
-  uint32_t fastRxStart = bridgeRawBytesRead;
-  uint32_t fastLinesStart = bridgeLinesRead;
-  bool fastReady = bridgeWaitFastReady(MOTH_LINE_TIMEOUT_MS);
-  uint32_t fastRxBytes = bridgeRawBytesRead - fastRxStart;
-  uint32_t fastRxLines = bridgeLinesRead - fastLinesStart;
-  if (!fastReady) {
-    Serial.printf("AudioMoth fast UART marker missing at %u baud; rx_bytes=%lu rx_lines=%lu\n",
-                  MOTH_UART_FAST_BAUD, (unsigned long)fastRxBytes, (unsigned long)fastRxLines);
-  }
-
-  if (fastReady) delay(50);
-  bool fastPing = fastReady && bridgePing();
-  if (!fastReady || !fastPing) {
-    if (fastReady) {
-      Serial.printf("AudioMoth fast UART marker arrived at %u baud, but PING failed\n", MOTH_UART_FAST_BAUD);
-    }
-    Serial.println("AudioMoth fast UART training failed; abandoning this bridge session");
-    MothSerial.updateBaudRate(MOTH_UART_BAUD);
-    bridgeFastBaudActive = false;
-    bridgeFlushInput();
-    return false;
-  }
-
-  Serial.printf("AudioMoth UART running at %u baud\n", MOTH_UART_FAST_BAUD);
+  Serial.printf("AudioMoth fast payload mode armed at %u baud with %u-byte UART chunks\n",
+                MOTH_UART_FAST_BAUD, MOTH_CHUNK_BYTES);
   return true;
 }
 
@@ -403,16 +388,20 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
 
   String line;
   bool gotHeader = false;
+  bool useFastPayload = bridgeFastBaudActive;
+  const char *headerPrefix = useFastPayload ? "FASTDATA " : "DATA ";
   for (uint8_t attempt = 1; attempt <= 3; attempt++) {
     bridgeFlushInput();
-    bridgeSendLine("GET " + path + " " + String(offset) + " " + String(maxBytes));
+    String command = useFastPayload ? "GETFAST " : "GET ";
+    bridgeSendLine(command + path + " " + String(offset) + " " + String(maxBytes));
 
-    if (bridgeReadExpectedLine("DATA ", line, MOTH_DATA_HEADER_TIMEOUT_MS) && line.startsWith("DATA ")) {
+    if (bridgeReadExpectedLine(headerPrefix, line, MOTH_DATA_HEADER_TIMEOUT_MS) && line.startsWith(headerPrefix)) {
       gotHeader = true;
       break;
     }
 
-    Serial.printf("GET header attempt %u failed at offset %lu; last line='%s'\n",
+    Serial.printf("%s header attempt %u failed at offset %lu; last line='%s'\n",
+                  useFastPayload ? "GETFAST" : "GET",
                   attempt, (unsigned long)offset, line.c_str());
     if (line == "OK BRIDGE_SLEEP") break;
     delay(100);
@@ -428,9 +417,13 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   unsigned long parsedOffset = 0;
   unsigned int parsedLength = 0;
   unsigned long parsedCrc = 0;
+  unsigned long payloadBaud = MOTH_UART_BAUD;
 
-  int matched = sscanf(line.c_str(), "DATA %127s %lu %u %lx", parsedPath, &parsedOffset, &parsedLength, &parsedCrc);
-  if (matched != 4) {
+  int matched = useFastPayload
+      ? sscanf(line.c_str(), "FASTDATA %127s %lu %u %lx %lu", parsedPath, &parsedOffset, &parsedLength, &parsedCrc, &payloadBaud)
+      : sscanf(line.c_str(), "DATA %127s %lu %u %lx", parsedPath, &parsedOffset, &parsedLength, &parsedCrc);
+  int expectedFields = useFastPayload ? 5 : 4;
+  if (matched != expectedFields) {
     Serial.printf("GET malformed DATA header at offset %lu: '%s'\n",
                   (unsigned long)offset, line.c_str());
     return false;
@@ -451,7 +444,36 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
     return false;
   }
 
-  if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS)) {
+  if (useFastPayload && payloadBaud != MOTH_UART_FAST_BAUD) {
+    Serial.printf("GETFAST baud mismatch: expected %u got %lu\n", MOTH_UART_FAST_BAUD, payloadBaud);
+    return false;
+  }
+
+  if (useFastPayload) {
+    MothSerial.updateBaudRate(MOTH_UART_FAST_BAUD);
+    bool magicFound = bridgeReadFastMagic(MOTH_FAST_MAGIC_TIMEOUT_MS);
+    bool payloadRead = magicFound && bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS);
+    MothSerial.updateBaudRate(MOTH_UART_BAUD);
+
+    if (!magicFound) {
+      Serial.printf("GETFAST preamble timeout at offset %lu\n", (unsigned long)offset);
+      bridgeFlushInput();
+      return false;
+    }
+    if (!payloadRead) {
+      Serial.printf("GETFAST binary timeout at offset %lu length %u\n",
+                    (unsigned long)offset, parsedLength);
+      bridgeFlushInput();
+      return false;
+    }
+
+    String doneLine;
+    if (!bridgeReadExpectedLine("OK FASTDATA", doneLine, MOTH_FAST_DONE_TIMEOUT_MS)) {
+      Serial.printf("GETFAST completion missing at offset %lu; got '%s'\n",
+                    (unsigned long)offset, doneLine.c_str());
+      return false;
+    }
+  } else if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS)) {
     Serial.printf("GET binary timeout at offset %lu length %u\n",
                   (unsigned long)offset, parsedLength);
     return false;
@@ -483,7 +505,6 @@ void bridgeDone() {
 
 void bridgeRestoreDefaultBaud() {
   if (!bridgeFastBaudActive) return;
-  MothSerial.updateBaudRate(MOTH_UART_BAUD);
   bridgeFastBaudActive = false;
   bridgeFlushInput();
 }
