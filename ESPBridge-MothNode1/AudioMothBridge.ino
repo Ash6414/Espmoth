@@ -383,6 +383,7 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   result.offset = offset;
   result.length = 0;
   result.crc = 0;
+  result.sdReadMs = 0;
 
   if (maxBytes == 0 || maxBytes > MOTH_CHUNK_BYTES) maxBytes = MOTH_CHUNK_BYTES;
 
@@ -418,12 +419,13 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   unsigned int parsedLength = 0;
   unsigned long parsedCrc = 0;
   unsigned long payloadBaud = MOTH_UART_BAUD;
+  unsigned long parsedSdReadMs = 0;
 
   int matched = useFastPayload
-      ? sscanf(line.c_str(), "FASTDATA %127s %lu %u %lx %lu", parsedPath, &parsedOffset, &parsedLength, &parsedCrc, &payloadBaud)
-      : sscanf(line.c_str(), "DATA %127s %lu %u %lx", parsedPath, &parsedOffset, &parsedLength, &parsedCrc);
+      ? sscanf(line.c_str(), "FASTDATA %127s %lu %u %lx %lu %lu", parsedPath, &parsedOffset, &parsedLength, &parsedCrc, &payloadBaud, &parsedSdReadMs)
+      : sscanf(line.c_str(), "DATA %127s %lu %u %lx %lu", parsedPath, &parsedOffset, &parsedLength, &parsedCrc, &parsedSdReadMs);
   int expectedFields = useFastPayload ? 5 : 4;
-  if (matched != expectedFields) {
+  if (matched < expectedFields) {
     Serial.printf("GET malformed DATA header at offset %lu: '%s'\n",
                   (unsigned long)offset, line.c_str());
     return false;
@@ -489,6 +491,7 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   result.offset = (uint32_t)parsedOffset;
   result.length = (uint32_t)parsedLength;
   result.crc = (uint32_t)parsedCrc;
+  result.sdReadMs = (uint32_t)parsedSdReadMs;
   result.ok = true;
   return true;
 }
