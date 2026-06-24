@@ -67,6 +67,31 @@ String pathWithoutQuery(const String &pathAndQuery) {
   return query >= 0 ? pathAndQuery.substring(0, query) : pathAndQuery;
 }
 
+WiFiClient uploadPlainClient;
+WiFiClientSecure uploadSecureClient;
+HTTPClient uploadHttpClient;
+bool uploadTlsConfigured = false;
+
+bool beginUploadHttpClient(const String &url, bool &connectionReused) {
+  bool secure = url.startsWith("https://");
+  connectionReused = secure ? uploadSecureClient.connected() : uploadPlainClient.connected();
+
+  if (secure) {
+    if (estimatedEpochUtc() <= 1700000000UL) {
+      Serial.println("Refusing HTTPS upload without a valid clock");
+      return false;
+    }
+    if (!uploadTlsConfigured) {
+      uploadSecureClient.setCACert(TLS_ROOT_CA);
+      uploadSecureClient.setHandshakeTimeout(max(1UL, HTTP_TIMEOUT_MS / 1000UL));
+      uploadTlsConfigured = true;
+    }
+    return uploadHttpClient.begin(uploadSecureClient, url);
+  }
+
+  return uploadHttpClient.begin(uploadPlainClient, url);
+}
+
 bool connectWiFi() {
   WiFi.mode(WIFI_STA);
   if (!beginWiFiConnection(cfgWifiSsid(), cfgWifiSecurity(), cfgWifiIdentity(), cfgWifiUsername(), cfgWifiPassword())) {
@@ -261,22 +286,30 @@ bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bo
 }
 
 bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut) {
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-  HTTPClient http;
   String url = cfgBaseUrl() + pathAndQuery;
-  if (!beginHttpClient(http, plainClient, secureClient, url)) return false;
+  bool connectionReused = false;
+  if (!beginUploadHttpClient(url, connectionReused)) return false;
 
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  http.addHeader("Content-Type", "application/octet-stream");
-  addAuthHeaders(http, "PUT", pathAndQuery, body, bodyLen, serverEpoch);
+  uploadHttpClient.setReuse(true);
+  uploadHttpClient.setTimeout(HTTP_TIMEOUT_MS);
+  uploadHttpClient.addHeader("Content-Type", "application/octet-stream");
+  uint32_t authStartMs = millis();
+  addAuthHeaders(uploadHttpClient, "PUT", pathAndQuery, body, bodyLen, serverEpoch);
+  uint32_t authMs = millis() - authStartMs;
 
-  int code = http.sendRequest("PUT", (uint8_t *)body, bodyLen);
-  responseOut = http.getString();
-  http.end();
+  uint32_t requestStartMs = millis();
+  int code = uploadHttpClient.sendRequest("PUT", (uint8_t *)body, bodyLen);
+  responseOut = uploadHttpClient.getString();
+  uint32_t requestMs = millis() - requestStartMs;
+  uploadHttpClient.end();
+
+  Serial.printf("PUT chunk bytes=%u -> %d in %lu ms (auth=%lu ms, connection=%s)\n",
+                (unsigned)bodyLen, code, (unsigned long)requestMs, (unsigned long)authMs,
+                connectionReused ? "reused" : "new");
 
   if (code < 200 || code >= 300) {
-    Serial.printf("PUT(binary) %s bytes=%u -> %d\n", pathAndQuery.c_str(), (unsigned)bodyLen, code);
+    uploadPlainClient.stop();
+    uploadSecureClient.stop();
   }
 #if DEBUG_HTTP_RESPONSES
   if (responseOut.length()) Serial.println(responseOut);
