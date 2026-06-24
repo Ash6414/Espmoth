@@ -26,6 +26,7 @@ struct ChunkResult {
   uint32_t offset;
   uint32_t length;
   uint32_t crc;
+  uint32_t sdReadMs;
 };
 
 enum UploadResultCode {
