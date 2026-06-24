@@ -236,6 +236,8 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
 
   uint32_t offset = session.resumeOffset;
   uint32_t transferStartMs = millis();
+  uint32_t uartTransferMs = 0;
+  uint32_t serverTransferMs = 0;
   uint32_t uartChunkBytes = bridgeTransferChunkBytes();
   while (offset < file.size) {
     uint32_t remaining = file.size - offset;
@@ -248,7 +250,9 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
       uint32_t uartOffset = offset + filled;
 
       ChunkResult chunk;
+      uint32_t uartStartMs = millis();
       bool gotChunk = bridgeGetChunk(file.path, uartOffset, requestBytes, chunk);
+      uartTransferMs += millis() - uartStartMs;
       if (!gotChunk || !chunk.ok || chunk.offset != uartOffset || chunk.length == 0 || chunk.length != requestBytes) {
         Serial.printf("GET failed at offset %lu\n", (unsigned long)uartOffset);
         bridgeFailure = true;
@@ -259,7 +263,10 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
       filled += chunk.length;
     }
 
-    if (!serverUploadChunk(serverEpoch, session, serverChunk, offset, batchBytes)) {
+    uint32_t serverStartMs = millis();
+    bool uploaded = serverUploadChunk(serverEpoch, session, serverChunk, offset, batchBytes);
+    serverTransferMs += millis() - serverStartMs;
+    if (!uploaded) {
       Serial.printf("serverUploadChunk failed at offset %lu\n", (unsigned long)offset);
       return false;
     }
@@ -282,9 +289,14 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
   }
 
   uint32_t elapsedMs = millis() - transferStartMs;
-  float kibPerSecond = elapsedMs > 0 ? ((float)(file.size - session.resumeOffset) * 1000.0f) / (1024.0f * (float)elapsedMs) : 0.0f;
-  Serial.printf("Completed %s in %.1f s (%.1f KiB/s)\n",
-                file.path.c_str(), elapsedMs / 1000.0f, kibPerSecond);
+  uint32_t transferredBytes = file.size - session.resumeOffset;
+  float kibPerSecond = elapsedMs > 0 ? ((float)transferredBytes * 1000.0f) / (1024.0f * (float)elapsedMs) : 0.0f;
+  float uartKibPerSecond = uartTransferMs > 0 ? ((float)transferredBytes * 1000.0f) / (1024.0f * (float)uartTransferMs) : 0.0f;
+  float serverKibPerSecond = serverTransferMs > 0 ? ((float)transferredBytes * 1000.0f) / (1024.0f * (float)serverTransferMs) : 0.0f;
+  Serial.printf("Completed %s in %.1f s: end_to_end=%.1f KiB/s uart=%.1f KiB/s server=%.1f KiB/s uart_ms=%lu server_ms=%lu\n",
+                file.path.c_str(), elapsedMs / 1000.0f, kibPerSecond,
+                uartKibPerSecond, serverKibPerSecond,
+                (unsigned long)uartTransferMs, (unsigned long)serverTransferMs);
 
   return true;
 }
