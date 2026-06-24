@@ -339,9 +339,15 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *
     if (!bridgeReadLine(line, 1000)) continue;
 
     if (line == "END") return true;
-    if (line.startsWith("ERR")) return false;
+    if (line.startsWith("ERR")) {
+      Serial.printf("AudioMoth LIST error: %s\n", line.c_str());
+      return false;
+    }
     if (bridgeIsAsyncLine(line)) continue;
-    if (line == "OK BRIDGE_SLEEP") return false;
+    if (line == "OK BRIDGE_SLEEP") {
+      Serial.println("AudioMoth LIST ended because the bridge service slept");
+      return false;
+    }
 
     if (line.startsWith("SD ")) {
       MothSdInfo parsed = {false, 0, 0};
@@ -378,6 +384,11 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *
     }
   }
 
+  Serial.printf("AudioMoth LIST timeout after %lu ms; files=%u rx_bytes=%lu rx_lines=%lu\n",
+                (unsigned long)MOTH_LIST_TIMEOUT_MS,
+                (unsigned int)countOut,
+                (unsigned long)bridgeRawBytesRead,
+                (unsigned long)bridgeLinesRead);
   return false;
 }
 
