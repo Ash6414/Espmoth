@@ -242,6 +242,8 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
   uint32_t transferStartMs = millis();
   uint32_t uartTransferMs = 0;
   uint32_t serverTransferMs = 0;
+  uint32_t sdReadMs = 0;
+  uint32_t serverProcessMs = 0;
   uint32_t uartChunkBytes = bridgeTransferChunkBytes();
   while (offset < file.size) {
     uint32_t remaining = file.size - offset;
@@ -264,12 +266,15 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
       }
 
       memcpy(serverChunk + filled, mothChunk, chunk.length);
+      sdReadMs += chunk.sdReadMs;
       filled += chunk.length;
     }
 
     uint32_t serverStartMs = millis();
-    bool uploaded = serverUploadChunk(serverEpoch, session, serverChunk, offset, batchBytes);
+    uint32_t chunkServerProcessMs = 0;
+    bool uploaded = serverUploadChunk(serverEpoch, session, serverChunk, offset, batchBytes, chunkServerProcessMs);
     serverTransferMs += millis() - serverStartMs;
+    serverProcessMs += chunkServerProcessMs;
     if (!uploaded) {
       Serial.printf("serverUploadChunk failed at offset %lu\n", (unsigned long)offset);
       return false;
@@ -297,10 +302,12 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
   float kibPerSecond = elapsedMs > 0 ? ((float)transferredBytes * 1000.0f) / (1024.0f * (float)elapsedMs) : 0.0f;
   float uartKibPerSecond = uartTransferMs > 0 ? ((float)transferredBytes * 1000.0f) / (1024.0f * (float)uartTransferMs) : 0.0f;
   float serverKibPerSecond = serverTransferMs > 0 ? ((float)transferredBytes * 1000.0f) / (1024.0f * (float)serverTransferMs) : 0.0f;
-  Serial.printf("Completed %s in %.1f s: end_to_end=%.1f KiB/s uart=%.1f KiB/s server=%.1f KiB/s uart_ms=%lu server_ms=%lu\n",
+  float sdKibPerSecond = sdReadMs > 0 ? ((float)transferredBytes * 1000.0f) / (1024.0f * (float)sdReadMs) : 0.0f;
+  Serial.printf("Completed %s in %.1f s: end_to_end=%.1f KiB/s sd=%.1f KiB/s uart=%.1f KiB/s network=%.1f KiB/s sd_ms=%lu uart_ms=%lu network_ms=%lu server_process_ms=%lu\n",
                 file.path.c_str(), elapsedMs / 1000.0f, kibPerSecond,
-                uartKibPerSecond, serverKibPerSecond,
-                (unsigned long)uartTransferMs, (unsigned long)serverTransferMs);
+                sdKibPerSecond, uartKibPerSecond, serverKibPerSecond,
+                (unsigned long)sdReadMs, (unsigned long)uartTransferMs,
+                (unsigned long)serverTransferMs, (unsigned long)serverProcessMs);
 
   return true;
 }
