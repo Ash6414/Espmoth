@@ -121,6 +121,7 @@ $lines = New-Object System.Collections.Generic.List[string]
 $result = "NO_RESULT"
 $usbDebugCommandSent = $false
 $ackSeen = $false
+$commandError = $false
 
 $portObj = [System.IO.Ports.SerialPort]::new($Port, $Baud, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
 $portObj.ReadTimeout = 250
@@ -147,6 +148,14 @@ try {
       $lines.Add($clean)
       Write-Host $clean
 
+      if ($clean -like "*TESTSTREAM*failed*" -or
+          $clean -like "*TESTSTREAM*timeout*" -or
+          $clean -like "*TESTSTREAM*CRC mismatch*" -or
+          $clean -like "*TESTSTREAM*unknown_command*" -or
+          $clean -like "USB_DEBUG_MOTH_LIST FAIL*") {
+        $commandError = $true
+      }
+
       if (!$usbDebugCommandSent -and $clean -like "USB_DEBUG_READY*") {
         Write-Host "Sending USB debug command: MOTH_STATUS"
         $portObj.WriteLine("MOTH_STATUS")
@@ -156,7 +165,11 @@ try {
 
       if ($clean -like "POST /v1/device/$NodeId/commands/$commandId/ack -> 200") {
         $ackSeen = $true
-        $result = "PASS"
+        if ($commandError) {
+          $result = "COMMAND_ERROR"
+        } else {
+          $result = "PASS"
+        }
         break
       }
 
@@ -222,6 +235,10 @@ switch ($result) {
   "MOTH_ERROR" {
     Write-Host "AudioMoth returned an ERR line during bridge open."
     exit 4
+  }
+  "COMMAND_ERROR" {
+    Write-Host "The queued $CommandType command was acknowledged, but its serial diagnostics reported a command-level failure."
+    exit 6
   }
   default {
     Write-Host "No bridge summary was seen before the monitor timeout."
