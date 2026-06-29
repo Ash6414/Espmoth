@@ -1,7 +1,7 @@
 param(
   [string]$Port = "COM7",
   [int]$Baud = 115200,
-  [string]$NodeId = "BATNODE_001",
+  [string]$NodeId = "AUTO",
   [int]$MonitorSeconds = 900
 )
 
@@ -36,6 +36,42 @@ if (!$pythonPath) { throw "No usable Python runtime found for queuing upload com
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $logPath = Join-Path $logDir "fast-upload-$stamp.log"
+
+$resolveNodeScript = @"
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+conn = sqlite3.connect(db_path, timeout=10)
+conn.row_factory = sqlite3.Row
+row = conn.execute(
+    '''
+    SELECT node_id FROM node_state
+    WHERE node_id IS NOT NULL AND node_id != ''
+    ORDER BY COALESCE(last_seen, updated_at, 0) DESC
+    LIMIT 1
+    '''
+).fetchone()
+if row is None:
+    row = conn.execute(
+        '''
+        SELECT node_id FROM nodes
+        WHERE active=1
+        ORDER BY COALESCE(updated_at, created_at, 0) DESC
+        LIMIT 1
+        '''
+    ).fetchone()
+conn.close()
+if row is None:
+    raise SystemExit("No node_id found in database. Pass -NodeId explicitly.")
+print(row["node_id"])
+"@
+
+if ([string]::IsNullOrWhiteSpace($NodeId) -or $NodeId -eq "AUTO") {
+  $NodeId = ($resolveNodeScript | & $pythonPath - $dbPath).Trim()
+  if (!$NodeId) { throw "Could not auto-detect node id" }
+  Write-Host "Auto-selected latest node: $NodeId"
+}
 
 $queueScript = @"
 import sqlite3
@@ -92,12 +128,33 @@ try {
 
 $lines | Set-Content -LiteralPath $logPath -Encoding UTF8
 $baudLine = $lines | Where-Object { $_ -like "AudioMoth fast payload mode armed at*" } | Select-Object -Last 1
+$streamLines = $lines | Where-Object { $_ -like "GETSTREAM * bytes at offset *" }
+$streamUnavailable = $lines | Where-Object { $_ -like "AudioMoth GETSTREAM is unavailable*" } | Select-Object -First 1
+$streamFatal = $lines | Where-Object { $_ -like "GETSTREAM failed fatally*" -or $_ -like "GETSTREAM *timeout*" -or $_ -like "GETSTREAM CRC mismatch*" } | Select-Object -First 1
 $results = $lines | Where-Object { $_ -like "Completed *end_to_end=*" }
 $listFailure = $lines | Where-Object { $_ -like "AudioMoth LIST *" } | Select-Object -Last 1
 
 Write-Host ""
 Write-Host "=== Fast upload benchmark ==="
-if ($baudLine) { Write-Host $baudLine } else { Write-Host "Fast payload negotiation was not observed." }
+if ($streamLines.Count -gt 0) {
+  $streamBytes = 0L
+  foreach ($line in $streamLines) {
+    if ($line -match "GETSTREAM ([0-9]+) bytes") {
+      $streamBytes += [int64]$Matches[1]
+    }
+  }
+  Write-Host ("GETSTREAM used: {0} streamed block(s), {1:N0} bytes" -f $streamLines.Count, $streamBytes)
+} elseif ($streamUnavailable) {
+  Write-Host "GETSTREAM unavailable; benchmark used the 115200-baud fallback path."
+  Write-Host $streamUnavailable
+} elseif ($streamFatal) {
+  Write-Host "GETSTREAM failed before completion:"
+  Write-Host $streamFatal
+} elseif ($baudLine) {
+  Write-Host $baudLine
+} else {
+  Write-Host "No fast UART mode was observed."
+}
 if ($results) {
   $results | ForEach-Object { Write-Host $_ }
   exit 0

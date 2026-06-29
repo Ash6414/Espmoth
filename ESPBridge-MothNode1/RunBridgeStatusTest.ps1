@@ -1,7 +1,7 @@
 param(
   [string]$Port = "COM7",
   [int]$Baud = 115200,
-  [string]$NodeId = "BATNODE_001",
+  [string]$NodeId = "AUTO",
   [int]$MonitorSeconds = 180,
   [string]$CommandType = "MOTH_STATUS"
 )
@@ -42,6 +42,42 @@ if (!$pythonPath) {
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $logPath = Join-Path $logDir "bridge-status-$stamp.log"
+
+$resolveNodeScript = @"
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+conn = sqlite3.connect(db_path, timeout=10)
+conn.row_factory = sqlite3.Row
+row = conn.execute(
+    '''
+    SELECT node_id FROM node_state
+    WHERE node_id IS NOT NULL AND node_id != ''
+    ORDER BY COALESCE(last_seen, updated_at, 0) DESC
+    LIMIT 1
+    '''
+).fetchone()
+if row is None:
+    row = conn.execute(
+        '''
+        SELECT node_id FROM nodes
+        WHERE active=1
+        ORDER BY COALESCE(updated_at, created_at, 0) DESC
+        LIMIT 1
+        '''
+    ).fetchone()
+conn.close()
+if row is None:
+    raise SystemExit("No node_id found in database. Pass -NodeId explicitly.")
+print(row["node_id"])
+"@
+
+if ([string]::IsNullOrWhiteSpace($NodeId) -or $NodeId -eq "AUTO") {
+  $NodeId = ($resolveNodeScript | & $pythonPath - $dbPath).Trim()
+  if (!$NodeId) { throw "Could not auto-detect node id" }
+  Write-Host "Auto-selected latest node: $NodeId"
+}
 
 $queueScript = @"
 import sqlite3
