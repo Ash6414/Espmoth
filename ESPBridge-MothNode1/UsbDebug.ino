@@ -44,10 +44,16 @@ void runUsbDebugMothList(long serverEpoch) {
   }
 }
 
+void runUsbDebugMothTestStream(long serverEpoch) {
+  String result = runAudioMothTestStreamDiagnostic(serverEpoch);
+  Serial.print("USB_DEBUG_MOTH_TEST_STREAM ");
+  Serial.println(result);
+}
+
 void runUsbBridgeDebugWindow(long serverEpoch, uint32_t windowMs) {
   if (serverEpoch <= 1700000000L) serverEpoch = 0;
 
-  Serial.printf("USB_DEBUG_READY window_ms=%lu commands=MOTH_STATUS,MOTH_LIST,DONE\n",
+  Serial.printf("USB_DEBUG_READY window_ms=%lu commands=MOTH_STATUS,MOTH_LIST,STREAM_TEST,DONE\n",
                 (unsigned long)windowMs);
   Serial.setTimeout(50);
 
@@ -76,6 +82,11 @@ void runUsbBridgeDebugWindow(long serverEpoch, uint32_t windowMs) {
     }
     if (cmd == "MOTH_LIST") {
       runUsbDebugMothList(serverEpoch);
+      start = millis();
+      continue;
+    }
+    if (cmd == "STREAM_TEST" || cmd == "MOTH_TEST_STREAM") {
+      runUsbDebugMothTestStream(serverEpoch);
       start = millis();
       continue;
     }

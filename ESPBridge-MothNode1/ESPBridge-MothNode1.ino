@@ -114,6 +114,7 @@ uint32_t bridgeTransferChunkBytes();
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds);
 bool bridgeStatus(String &statusOut);
 bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *sdInfo);
+bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &receivedOut, uint32_t &elapsedMsOut, uint32_t &crcOut);
 bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requestedBytes, uint8_t *dest, ChunkResult &result, bool &fatalOut);
 bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, ChunkResult &result);
 bool bridgeDelete(const String &path);
@@ -144,6 +145,7 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced);
 bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &file, bool &bridgeFailure);
 bool syncMothTimeOnly(long serverEpoch);
 String runAudioMothListDiagnostic(long serverEpoch);
+String runAudioMothTestStreamDiagnostic(long serverEpoch);
 void runUsbBridgeDebugWindow(long serverEpoch, uint32_t windowMs);
 
 bool fetchFreshServerTimeAndSync(uint32_t *rttMsOut, long *serverEpochOut) {

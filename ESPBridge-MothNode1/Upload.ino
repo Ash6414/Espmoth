@@ -131,6 +131,37 @@ String runAudioMothListDiagnostic(long serverEpoch) {
   return msg;
 }
 
+String runAudioMothTestStreamDiagnostic(long serverEpoch) {
+  uint32_t received = 0;
+  uint32_t elapsedMs = 0;
+  uint32_t crc = 0;
+
+  if (!openBridgeSession(serverEpoch)) {
+    return "MOTH_TEST_STREAM failed: bridge not ready";
+  }
+
+  bool ok = bridgeRunTestStream(MOTH_TEST_STREAM_BYTES, MOTH_STREAM_FAST_BAUD, received, elapsedMs, crc);
+  closeBridgeSession();
+  if (!ok) {
+    return "MOTH_TEST_STREAM failed";
+  }
+
+  float kibPerSecond = elapsedMs > 0 ? ((float)received * 1000.0f) / (1024.0f * (float)elapsedMs) : 0.0f;
+  Serial.printf("MOTH_TEST_STREAM OK bytes=%lu baud=%lu ms=%lu rate=%.1f KiB/s crc=%08lX\n",
+                (unsigned long)received,
+                (unsigned long)MOTH_STREAM_FAST_BAUD,
+                (unsigned long)elapsedMs,
+                kibPerSecond,
+                (unsigned long)crc);
+
+  String msg = "MOTH_TEST_STREAM ok bytes=" + String(received);
+  msg += " baud=" + String(MOTH_STREAM_FAST_BAUD);
+  msg += " ms=" + String(elapsedMs);
+  msg += " kib_s=" + String(kibPerSecond, 1);
+  msg += " crc=" + String(crc, HEX);
+  return msg;
+}
+
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   UploadSummary summary;
   summary.code = UPLOAD_NOT_ATTEMPTED;

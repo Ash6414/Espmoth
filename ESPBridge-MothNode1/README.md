@@ -153,6 +153,9 @@ PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
 ESP first tries `GETSTREAM`: one slow command starts a one-way 921600-baud
 AudioMoth-to-ESP stream of up to 64 KiB, framed as CRC32-checked 8 KiB pieces.
 The ESP writes the validated stream directly into the 64 KiB HTTPS PUT buffer.
+For bench testing without a recording on the SD card, `MOTH_TEST_STREAM` asks
+AudioMoth to send a deterministic 1 MiB max stream over the same 921600-baud
+frame parser and reports CRC-checked KiB/s.
 
 If `GETSTREAM` is unavailable, the ESP falls back to the proven 115200-baud
 `GET` path with 4 KiB UART reads aggregated into 64 KiB server PUT requests.
@@ -168,10 +171,14 @@ PING
 UPLOAD_NOW
 SYNC_MOTH_TIME
 MOTH_STATUS
+MOTH_LIST
+MOTH_TEST_STREAM
 OPEN_SETUP
 ```
 
 `UPLOAD_NOW` bypasses the solar/charging requirement, but still refuses upload below `MIN_UPLOAD_BATTERY_V`.
+`MOTH_LIST` returns SD free/total size and a short file preview.
+`MOTH_TEST_STREAM` measures the fast AudioMoth-to-ESP UART path without reading SD.
 `OPEN_SETUP` preserves the current node identity and restarts once into the local setup portal so Wi-Fi or server URL can be changed.
 
 ## One-command bridge test

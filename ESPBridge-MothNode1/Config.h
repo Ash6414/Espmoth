@@ -98,6 +98,7 @@
 #define MOTH_STREAM_FAST_ENABLED     1
 #define MOTH_STREAM_FAST_BAUD        921600
 #define MOTH_STREAM_FRAME_TIMEOUT_MS 4000
+#define MOTH_TEST_STREAM_BYTES       1048576
 // Per-payload GETFAST is kept off in the field build; whole-session high baud
 // is simpler to recover from and falls back cleanly to 115200.
 #define MOTH_UART_FAST_BAUD          115200

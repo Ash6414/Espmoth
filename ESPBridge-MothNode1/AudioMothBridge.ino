@@ -536,6 +536,127 @@ uint32_t bridgeReadUInt32LE(const uint8_t *data) {
 
 bool bridgeFastStreamSupported = true;
 
+bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &receivedOut, uint32_t &elapsedMsOut, uint32_t &crcOut) {
+  receivedOut = 0;
+  elapsedMsOut = 0;
+  crcOut = 0;
+
+  if (requestedBytes == 0) requestedBytes = MOTH_TEST_STREAM_BYTES;
+  if (requestedBytes > MOTH_TEST_STREAM_BYTES) requestedBytes = MOTH_TEST_STREAM_BYTES;
+  if (baud == 0) baud = MOTH_STREAM_FAST_BAUD;
+  if (baud == MOTH_UART_BAUD) return false;
+  if (bridgeCurrentBaud != MOTH_UART_BAUD || bridgeSessionBaudActive || bridgeFastBaudActive) {
+    return false;
+  }
+
+  bridgeFlushInput();
+  bridgeSendLine("TESTSTREAM " + String(requestedBytes) + " " + String(baud));
+
+  String line;
+  if (!bridgeReadExpectedLine("TESTSTREAM ", line, MOTH_DATA_HEADER_TIMEOUT_MS) || !line.startsWith("TESTSTREAM ")) {
+    if (line.length()) {
+      Serial.printf("TESTSTREAM header failed: %s\n", line.c_str());
+    } else {
+      Serial.println("TESTSTREAM header timed out");
+    }
+    bridgeFlushInput();
+    return false;
+  }
+
+  unsigned long streamLength = 0;
+  unsigned int frameMax = 0;
+  unsigned long streamBaud = 0;
+  if (sscanf(line.c_str(), "TESTSTREAM %lu %u %lu", &streamLength, &frameMax, &streamBaud) != 3) {
+    Serial.printf("TESTSTREAM malformed header: %s\n", line.c_str());
+    return false;
+  }
+  if (streamLength == 0 || streamLength > requestedBytes || frameMax == 0 ||
+      frameMax > MOTH_CHUNK_BYTES || streamBaud != baud) {
+    Serial.printf("TESTSTREAM header mismatch: %s\n", line.c_str());
+    return false;
+  }
+
+  uint32_t startMs = millis();
+  MothSerial.updateBaudRate(baud);
+
+  static const uint8_t streamMagic[] = {0xA5, 0x5A, 0xD7, 0x7D};
+  uint8_t frameHeader[14];
+  uint32_t received = 0;
+  uint32_t combinedCrc = 0;
+
+  while (received < streamLength) {
+    if (!bridgeReadMagic(streamMagic, sizeof(streamMagic), MOTH_STREAM_FRAME_TIMEOUT_MS)) {
+      Serial.printf("TESTSTREAM frame magic timeout received %lu/%lu\n",
+                    (unsigned long)received, (unsigned long)streamLength);
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    if (!bridgeReadBytes(frameHeader, sizeof(frameHeader), MOTH_STREAM_FRAME_TIMEOUT_MS)) {
+      Serial.printf("TESTSTREAM frame header timeout received %lu/%lu\n",
+                    (unsigned long)received, (unsigned long)streamLength);
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    uint32_t frameOffset = bridgeReadUInt32LE(frameHeader);
+    uint16_t frameLength = bridgeReadUInt16LE(frameHeader + 4);
+    uint32_t frameCrc = bridgeReadUInt32LE(frameHeader + 6);
+    if (frameOffset != received || frameLength == 0 || frameLength > frameMax || received + frameLength > streamLength) {
+      Serial.printf("TESTSTREAM metadata mismatch: frame_offset=%lu expected=%lu len=%u total=%lu\n",
+                    (unsigned long)frameOffset, (unsigned long)received, frameLength,
+                    (unsigned long)streamLength);
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    if (!bridgeReadBytes(mothChunk, frameLength, MOTH_BINARY_TIMEOUT_MS)) {
+      Serial.printf("TESTSTREAM payload timeout at offset %lu length %u\n",
+                    (unsigned long)frameOffset, frameLength);
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    uint32_t localCrc = crc32Update(0, mothChunk, frameLength);
+    if (localCrc != frameCrc) {
+      Serial.printf("TESTSTREAM CRC mismatch at offset %lu: local=%08lX moth=%08lX\n",
+                    (unsigned long)frameOffset, (unsigned long)localCrc, (unsigned long)frameCrc);
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    for (uint16_t i = 0; i < frameLength; i += 1) {
+      uint8_t expected = (uint8_t)((frameOffset + i) & 0xFFU);
+      if (mothChunk[i] != expected) {
+        Serial.printf("TESTSTREAM payload pattern mismatch at offset %lu: got=%u expected=%u\n",
+                      (unsigned long)(frameOffset + i), mothChunk[i], expected);
+        bridgeRestartUart(MOTH_UART_BAUD, true);
+        return false;
+      }
+    }
+
+    combinedCrc = crc32Update(combinedCrc, mothChunk, frameLength);
+    received += frameLength;
+  }
+
+  bridgeRestartUart(MOTH_UART_BAUD, false);
+  elapsedMsOut = millis() - startMs;
+
+  String doneLine;
+  if (!bridgeReadExpectedLine("OK TESTSTREAM", doneLine, MOTH_FAST_DONE_TIMEOUT_MS)) {
+    if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
+      Serial.printf("TESTSTREAM completion error: %s\n", doneLine.c_str());
+      return false;
+    }
+    Serial.printf("TESTSTREAM completion not observed; validated %lu bytes by frame CRC\n",
+                  (unsigned long)received);
+  }
+
+  receivedOut = received;
+  crcOut = combinedCrc;
+  return received == streamLength;
+}
+
 bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requestedBytes, uint8_t *dest, ChunkResult &result, bool &fatalOut) {
   result.ok = false;
   result.path = path;
