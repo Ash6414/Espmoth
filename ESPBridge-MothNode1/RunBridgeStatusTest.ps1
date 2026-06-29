@@ -120,6 +120,7 @@ Write-Host "Log: $logPath"
 $lines = New-Object System.Collections.Generic.List[string]
 $result = "NO_RESULT"
 $usbDebugCommandSent = $false
+$ackSeen = $false
 
 $portObj = [System.IO.Ports.SerialPort]::new($Port, $Baud, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
 $portObj.ReadTimeout = 250
@@ -153,7 +154,8 @@ try {
         continue
       }
 
-      if ($clean -like "Bridge READY after*" -or $clean -like "MOTH >> OK BRIDGE_READY*" -or $clean -like "MOTH >> OK PONG*") {
+      if ($clean -like "POST /v1/device/$NodeId/commands/$commandId/ack -> 200") {
+        $ackSeen = $true
         $result = "PASS"
         break
       }
@@ -170,6 +172,11 @@ try {
 
       if ($clean -like "Bridge READY failed*") {
         $result = "MOTH_ERROR"
+        break
+      }
+
+      if ($clean -like "Sleeping for*" -and $ackSeen) {
+        $result = "PASS"
         break
       }
 
@@ -201,7 +208,7 @@ Write-Host "Bridge test result: $result"
 
 switch ($result) {
   "PASS" {
-    Write-Host "AudioMoth replied over UART. The bridge is alive."
+    Write-Host "AudioMoth replied over UART and the queued $CommandType command was acknowledged."
     exit 0
   }
   "NO_AUDIOMOTH_UART" {

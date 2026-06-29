@@ -57,7 +57,7 @@ bool postTimeCheck(long serverEpoch, uint32_t rttMs, const String &notes) {
 void ackCommand(long serverEpoch, int commandId, const String &msg) {
   if (commandId < 0) return;
 
-  StaticJsonDocument<384> doc;
+  StaticJsonDocument<768> doc;
   JsonObject response = doc.createNestedObject("response");
   response["message"] = msg;
   response["estimated_epoch"] = estimatedEpochUtc();
@@ -110,6 +110,8 @@ void pollCommands(long serverEpoch, const PowerState &p) {
         closeBridgeSession();
       }
       ackCommand(serverEpoch, id, ok ? status : String("AudioMoth status unavailable"));
+    } else if (type == "MOTH_LIST") {
+      ackCommand(serverEpoch, id, runAudioMothListDiagnostic(serverEpoch));
     } else if (type == "OPEN_SETUP") {
       ackCommand(serverEpoch, id, "Restarting into Bat Node setup portal");
       requestProvisioningOnNextBoot();

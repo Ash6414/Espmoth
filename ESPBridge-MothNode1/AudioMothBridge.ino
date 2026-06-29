@@ -481,6 +481,12 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *
       continue;
     }
 
+    if (line.startsWith("INFO ")) {
+      Serial.print("AudioMoth LIST ");
+      Serial.println(line);
+      continue;
+    }
+
     if (line.startsWith("FILE ")) {
       String path;
       uint32_t size = 0;
@@ -499,8 +505,14 @@ bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *
         files[countOut].size = size;
         files[countOut].localFileId = 0;
         countOut += 1;
+        Serial.printf("AudioMoth FILE %s %lu\n", path.c_str(), (unsigned long)size);
+      } else {
+        Serial.printf("AudioMoth LIST max file count reached; ignoring %s\n", path.c_str());
       }
+      continue;
     }
+
+    Serial.printf("AudioMoth LIST ignored line: %s\n", line.c_str());
   }
 
   Serial.printf("AudioMoth LIST timeout after %lu ms; files=%u rx_bytes=%lu rx_lines=%lu\n",

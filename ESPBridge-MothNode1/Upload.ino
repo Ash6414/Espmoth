@@ -101,6 +101,36 @@ bool syncMothTimeOnly(long serverEpoch) {
   return ok;
 }
 
+String runAudioMothListDiagnostic(long serverEpoch) {
+  MothFile files[MOTH_MAX_FILES_PER_SESSION];
+  MothSdInfo sdInfo = {false, 0, 0};
+  size_t fileCount = 0;
+
+  if (!openBridgeUploadSession(serverEpoch)) {
+    return "MOTH_LIST failed: AudioMoth file service not ready";
+  }
+
+  bool listed = bridgeList(files, MOTH_MAX_FILES_PER_SESSION, fileCount, &sdInfo);
+  closeBridgeSession();
+  if (!listed) {
+    return "MOTH_LIST failed: LIST command failed";
+  }
+
+  String msg = "MOTH_LIST count=" + String((unsigned)fileCount);
+  if (sdInfo.valid) {
+    msg += " sd_free_mb=" + String(sdInfo.freeKb / 1024UL);
+    msg += " sd_total_mb=" + String(sdInfo.totalKb / 1024UL);
+  }
+  size_t previewCount = fileCount < 3 ? fileCount : 3;
+  for (size_t i = 0; i < previewCount; i += 1) {
+    msg += " file" + String((unsigned)i + 1) + "=" + files[i].path + ":" + String(files[i].size);
+  }
+  if (fileCount > previewCount) {
+    msg += " more=" + String((unsigned)(fileCount - previewCount));
+  }
+  return msg;
+}
+
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   UploadSummary summary;
   summary.code = UPLOAD_NOT_ATTEMPTED;

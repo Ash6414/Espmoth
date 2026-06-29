@@ -143,6 +143,7 @@ void closeBridgeSession();
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced);
 bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &file, bool &bridgeFailure);
 bool syncMothTimeOnly(long serverEpoch);
+String runAudioMothListDiagnostic(long serverEpoch);
 void runUsbBridgeDebugWindow(long serverEpoch, uint32_t windowMs);
 
 bool fetchFreshServerTimeAndSync(uint32_t *rttMsOut, long *serverEpochOut) {
