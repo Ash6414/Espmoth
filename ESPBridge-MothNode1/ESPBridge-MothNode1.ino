@@ -114,10 +114,12 @@ uint32_t bridgeTransferChunkBytes();
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds);
 bool bridgeStatus(String &statusOut);
 bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *sdInfo);
+bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requestedBytes, uint8_t *dest, ChunkResult &result, bool &fatalOut);
 bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, ChunkResult &result);
 bool bridgeDelete(const String &path);
 void bridgeDone();
 void bridgeRestoreDefaultBaud();
+uint32_t bridgeCurrentBaudRate();
 uint32_t crc32Update(uint32_t crc, const uint8_t *data, uint32_t length);
 
 // ServerApi.ino

@@ -86,8 +86,20 @@
 // AudioMoth bridge protocol
 // ----------------------------
 #define MOTH_UART_BAUD               115200
-// Keep equal to MOTH_UART_BAUD for the stable bridge path. Higher values enable
-// the experimental per-payload GETFAST mode and need fresh bench testing.
+// Whole-session high-baud mode keeps commands and DATA payloads at one faster
+// baud after a proven BAUD/PING handshake. Failed probes reopen at 115200.
+#define MOTH_SESSION_FAST_ENABLED    0
+#define MOTH_SESSION_FAST_BAUD       921600
+#define MOTH_SESSION_RETRY_BAUD_1    460800
+#define MOTH_SESSION_RETRY_BAUD_2    230400
+#define MOTH_SESSION_RESET_MS        4500
+// Preferred fast path: one 115200 command starts a one-way AudioMoth->ESP32
+// stream at high baud. ESP-to-AudioMoth commands remain at 115200.
+#define MOTH_STREAM_FAST_ENABLED     1
+#define MOTH_STREAM_FAST_BAUD        921600
+#define MOTH_STREAM_FRAME_TIMEOUT_MS 4000
+// Per-payload GETFAST is kept off in the field build; whole-session high baud
+// is simpler to recover from and falls back cleanly to 115200.
 #define MOTH_UART_FAST_BAUD          115200
 #define MOTH_READY_TIMEOUT_MS        65000
 #define MOTH_LINE_TIMEOUT_MS         6000

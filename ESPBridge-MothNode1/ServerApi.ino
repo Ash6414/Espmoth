@@ -16,7 +16,7 @@ bool postHeartbeat(long serverEpoch, const PowerState &p, const UploadSummary &u
   JsonObject bridge = doc.createNestedObject("bridge");
   bridge["req_pin"] = digitalRead(PIN_MOTH_REQ);
   bridge["busy_pin"] = digitalRead(PIN_MOTH_BUSY);
-  bridge["uart_baud"] = MOTH_UART_BAUD;
+  bridge["uart_baud"] = bridgeCurrentBaudRate();
 
   JsonObject stats = doc.createNestedObject("stats");
   stats["boot_count"] = rtcBootCounter;

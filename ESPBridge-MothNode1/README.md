@@ -11,7 +11,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Keeps the production UART bridge at 115200 baud for commands and file payloads.
+- Keeps AudioMoth commands at 115200 baud and uses one-way 921600-baud streaming when the matching AudioMoth bin supports `GETSTREAM`.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -149,16 +149,17 @@ When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD tota
 
 The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
 interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
-PB10, and the bridge UART pins. The stable field build keeps AudioMoth commands
-and file payloads at 115200 baud. The ESP reads 4 KiB UART pieces and aggregates
-them into 64 KiB HTTPS PUT requests to reduce server round trips while retaining
-enough contiguous heap for TLS. Live tests showed that 128 KiB could not allocate
-and 96 KiB starved the HTTPS client.
+PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
+ESP first tries `GETSTREAM`: one slow command starts a one-way 921600-baud
+AudioMoth-to-ESP stream of up to 64 KiB, framed as CRC32-checked 8 KiB pieces.
+The ESP writes the validated stream directly into the 64 KiB HTTPS PUT buffer.
 
-The AudioMoth firmware still exposes experimental high-baud `FASTCAP`/`GETFAST`
-support, but the ESP build leaves `MOTH_UART_FAST_BAUD` equal to
-`MOTH_UART_BAUD` until the high-baud recovery path is bench-tested with a fresh
-SD file. The ESP USB debug console continues to use 115200 baud.
+If `GETSTREAM` is unavailable, the ESP falls back to the proven 115200-baud
+`GET` path with 4 KiB UART reads aggregated into 64 KiB server PUT requests.
+Live tests showed that 128 KiB could not allocate and 96 KiB starved the HTTPS
+client. Whole-session high baud remains disabled because bench testing showed
+ESP-to-AudioMoth commands were not reliable above 115200. The ESP USB debug
+console continues to use 115200 baud.
 
 ## Command types supported
 
