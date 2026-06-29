@@ -12,15 +12,31 @@ $sketchDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Resolve-Path (Join-Path $sketchDir "..\..\..")
 $serverDir = Join-Path $projectRoot "Code\Server\MothServer-main\bat_node_system\server"
 $dbPath = Join-Path $serverDir "bat_nodes_v2.db"
-$pythonPath = Join-Path $serverDir ".venv\Scripts\python.exe"
+$pythonCandidates = @(
+  (Join-Path $serverDir ".venv\Scripts\python.exe"),
+  (Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"),
+  "python"
+)
+$pythonPath = $null
 $logDir = Join-Path $sketchDir "logs"
 
 if (!(Test-Path -LiteralPath $dbPath)) {
   throw "Server database not found: $dbPath"
 }
 
-if (!(Test-Path -LiteralPath $pythonPath)) {
-  throw "Server virtualenv Python not found: $pythonPath"
+foreach ($candidate in $pythonCandidates) {
+  try {
+    $probe = & $candidate -c "import sqlite3; print('ok')" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $probe -eq "ok") {
+      $pythonPath = $candidate
+      break
+    }
+  } catch {
+  }
+}
+
+if (!$pythonPath) {
+  throw "No usable Python runtime found for queuing bridge commands"
 }
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -67,6 +83,7 @@ Write-Host "Log: $logPath"
 
 $lines = New-Object System.Collections.Generic.List[string]
 $result = "NO_RESULT"
+$usbDebugCommandSent = $false
 
 $portObj = [System.IO.Ports.SerialPort]::new($Port, $Baud, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
 $portObj.ReadTimeout = 250
@@ -93,8 +110,25 @@ try {
       $lines.Add($clean)
       Write-Host $clean
 
+      if (!$usbDebugCommandSent -and $clean -like "USB_DEBUG_READY*") {
+        Write-Host "Sending USB debug command: MOTH_STATUS"
+        $portObj.WriteLine("MOTH_STATUS")
+        $usbDebugCommandSent = $true
+        continue
+      }
+
       if ($clean -like "Bridge READY after*" -or $clean -like "MOTH >> OK BRIDGE_READY*" -or $clean -like "MOTH >> OK PONG*") {
         $result = "PASS"
+        break
+      }
+
+      if ($clean -like "USB_DEBUG_MOTH_STATUS OK STATUS*") {
+        $result = "PASS"
+        break
+      }
+
+      if ($clean -like "USB_DEBUG_MOTH_STATUS FAIL*") {
+        $result = "MOTH_ERROR"
         break
       }
 

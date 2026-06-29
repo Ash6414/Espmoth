@@ -75,8 +75,10 @@ String pathWithoutQuery(const String &pathAndQuery);
 bool connectWiFi();
 bool syncClockFromNtp();
 bool beginHttpClient(HTTPClient &http, WiFiClient &plainClient, WiFiClientSecure &secureClient, const String &url);
+void closeUploadHttpClient();
 void syncSystemClock(uint32_t epochUtc);
 uint32_t estimatedEpochUtc();
+const String &activeBaseUrl();
 long getServerTime(uint32_t *rttMsOut);
 void addAuthHeaders(HTTPClient &http, const String &method, const String &path, const uint8_t *body, size_t bodyLen, long serverEpoch);
 bool signedPostJson(const String &path, const String &body, long serverEpoch, String &responseOut);
@@ -139,6 +141,7 @@ void closeBridgeSession();
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced);
 bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &file, bool &bridgeFailure);
 bool syncMothTimeOnly(long serverEpoch);
+void runUsbBridgeDebugWindow(long serverEpoch, uint32_t windowMs);
 
 bool fetchFreshServerTimeAndSync(uint32_t *rttMsOut, long *serverEpochOut) {
   if (!connectWiFi()) return false;
@@ -162,6 +165,7 @@ bool fetchFreshServerTimeAndSync(uint32_t *rttMsOut, long *serverEpochOut) {
   if (serverEpochOut) *serverEpochOut = serverEpoch;
 
   Serial.printf("Server epoch: %ld, RTT: %lu ms\n", serverEpoch, (unsigned long)rttMs);
+  Serial.printf("Active server: %s\n", activeBaseUrl().c_str());
   return true;
 }
 
@@ -186,6 +190,9 @@ void setup() {
   Serial.println("=== ESP32 AudioMoth bridge node ===");
   Serial.printf("Node ID: %s\n", cfgNodeId().c_str());
   Serial.printf("Server: %s\n", cfgBaseUrl().c_str());
+  if (String(SERVER_FALLBACK_BASE_URL).length() > 0) {
+    Serial.printf("Fallback server: %s\n", SERVER_FALLBACK_BASE_URL);
+  }
   Serial.printf("Boot count: %lu\n", (unsigned long)rtcBootCounter);
   Serial.printf("Wake cause: %d\n", (int)wakeCause);
   Serial.printf("MOTH_BUSY=%d\n", mothBusy());
@@ -210,6 +217,9 @@ void setup() {
   long serverEpoch = 0;
   if (!fetchFreshServerTimeAndSync(&rttMs, &serverEpoch)) {
     lastUpload = {UPLOAD_NOT_ATTEMPTED, 0, 0, 0, "server time unavailable"};
+#if USB_BRIDGE_DEBUG_ON_SERVER_FAIL
+    runUsbBridgeDebugWindow((long)estimatedEpochUtc(), USB_BRIDGE_DEBUG_WINDOW_MS);
+#endif
     if (WiFi.status() != WL_CONNECTED && nodeConfigReady()) {
       Serial.println("Saved Wi-Fi is unavailable; opening the recovery portal.");
       runProvisioningPortal(true);

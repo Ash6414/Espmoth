@@ -71,6 +71,26 @@ WiFiClient uploadPlainClient;
 WiFiClientSecure uploadSecureClient;
 HTTPClient uploadHttpClient;
 bool uploadTlsConfigured = false;
+String gActiveBaseUrl;
+
+void closeUploadHttpClient() {
+  uploadHttpClient.end();
+  uploadPlainClient.stop();
+  uploadSecureClient.stop();
+}
+
+String normalizeRuntimeBaseUrl(String value) {
+  value.trim();
+  while (value.endsWith("/")) value.remove(value.length() - 1);
+  return value;
+}
+
+const String &activeBaseUrl() {
+  if (gActiveBaseUrl.length() == 0) {
+    gActiveBaseUrl = normalizeRuntimeBaseUrl(cfgBaseUrl());
+  }
+  return gActiveBaseUrl;
+}
 
 bool beginUploadHttpClient(const String &url, bool &connectionReused) {
   bool secure = url.startsWith("https://");
@@ -122,6 +142,16 @@ bool connectWiFi() {
   return false;
 }
 
+bool ensureHttpNetworkReady() {
+  if (WiFi.status() == WL_CONNECTED) return true;
+
+  Serial.println("Wi-Fi disconnected before HTTP request; reconnecting");
+  closeUploadHttpClient();
+  WiFi.disconnect(false);
+  delay(250);
+  return connectWiFi();
+}
+
 bool syncClockFromNtp() {
   configTime(0, 0, "time.cloudflare.com", "pool.ntp.org", "time.google.com");
   uint32_t start = millis();
@@ -171,14 +201,19 @@ uint32_t estimatedEpochUtc() {
   return 0;
 }
 
-long getServerTime(uint32_t *rttMsOut) {
+long getServerTimeFromBaseUrl(const String &baseUrl, const String &path, uint32_t *rttMsOut) {
   WiFiClient plainClient;
   WiFiClientSecure secureClient;
   HTTPClient http;
-  String path = ENDPOINT_SERVER_TIME;
-  String url = cfgBaseUrl() + path;
+  String normalized = normalizeRuntimeBaseUrl(baseUrl);
+  if (normalized.length() == 0) return 0;
 
-  if (!beginHttpClient(http, plainClient, secureClient, url)) return 0;
+  String url = normalized + path;
+
+  if (!beginHttpClient(http, plainClient, secureClient, url)) {
+    Serial.printf("GET %s begin failed for %s\n", path.c_str(), normalized.c_str());
+    return 0;
+  }
   http.setTimeout(HTTP_TIMEOUT_MS);
 
   uint32_t t0 = millis();
@@ -186,6 +221,7 @@ long getServerTime(uint32_t *rttMsOut) {
   uint32_t rtt = millis() - t0;
 
   if (code != 200) {
+    Serial.printf("GET %s on %s -> %d\n", path.c_str(), normalized.c_str(), code);
     http.end();
     return 0;
   }
@@ -196,8 +232,28 @@ long getServerTime(uint32_t *rttMsOut) {
   StaticJsonDocument<256> doc;
   if (deserializeJson(doc, resp)) return 0;
 
+  long epoch = doc["epoch_utc"] | (doc["server_time"] | 0);
+  if (epoch <= 1700000000L) return 0;
+
+  gActiveBaseUrl = normalized;
   if (rttMsOut) *rttMsOut = rtt;
-  return doc["epoch_utc"] | 0;
+  return epoch;
+}
+
+long getServerTime(uint32_t *rttMsOut) {
+  String path = ENDPOINT_SERVER_TIME;
+  long epoch = getServerTimeFromBaseUrl(cfgBaseUrl(), path, rttMsOut);
+  if (epoch > 1700000000L) return epoch;
+
+  String fallback = normalizeRuntimeBaseUrl(String(SERVER_FALLBACK_BASE_URL));
+  String primary = normalizeRuntimeBaseUrl(cfgBaseUrl());
+  if (fallback.length() > 0 && fallback != primary) {
+    Serial.printf("Primary server time failed; trying fallback %s\n", fallback.c_str());
+    epoch = getServerTimeFromBaseUrl(fallback, path, rttMsOut);
+    if (epoch > 1700000000L) return epoch;
+  }
+
+  return 0;
 }
 
 void addAuthHeaders(HTTPClient &http, const String &method, const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch) {
@@ -219,53 +275,83 @@ void addAuthHeaders(HTTPClient &http, const String &method, const String &pathAn
 }
 
 bool signedPostJson(const String &path, const String &body, long serverEpoch, String &responseOut) {
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-  HTTPClient http;
-  String url = cfgBaseUrl() + path;
-  if (!beginHttpClient(http, plainClient, secureClient, url)) return false;
+  for (uint8_t attempt = 1; attempt <= 2; attempt++) {
+    if (!ensureHttpNetworkReady()) return false;
 
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  http.addHeader("Content-Type", "application/json");
-  addAuthHeaders(http, "POST", path, (const uint8_t *)body.c_str(), body.length(), serverEpoch);
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    HTTPClient http;
+    String url = activeBaseUrl() + path;
+    if (!beginHttpClient(http, plainClient, secureClient, url)) {
+      Serial.printf("POST %s begin failed%s\n", path.c_str(), attempt == 1 ? " (will retry)" : "");
+      closeUploadHttpClient();
+      delay(500);
+      continue;
+    }
 
-  int code = http.POST(body);
-  responseOut = http.getString();
-  http.end();
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.addHeader("Content-Type", "application/json");
+    addAuthHeaders(http, "POST", path, (const uint8_t *)body.c_str(), body.length(), serverEpoch);
 
-  Serial.printf("POST %s -> %d\n", path.c_str(), code);
+    int code = http.POST(body);
+    responseOut = http.getString();
+    http.end();
+
+    Serial.printf("POST %s -> %d%s\n", path.c_str(), code, (code < 0 && attempt == 1) ? " (will retry)" : "");
 #if DEBUG_HTTP_RESPONSES
-  if (responseOut.length()) Serial.println(responseOut);
+    if (responseOut.length()) Serial.println(responseOut);
 #endif
-  return code >= 200 && code < 300;
+    if (code >= 200 && code < 300) return true;
+    if (code >= 400 && code < 500) return false;
+
+    closeUploadHttpClient();
+    delay(500);
+  }
+
+  return false;
 }
 
 bool signedGet(const String &path, long serverEpoch, String &responseOut) {
-  WiFiClient plainClient;
-  WiFiClientSecure secureClient;
-  HTTPClient http;
-  String url = cfgBaseUrl() + path;
-  if (!beginHttpClient(http, plainClient, secureClient, url)) return false;
+  for (uint8_t attempt = 1; attempt <= 2; attempt++) {
+    if (!ensureHttpNetworkReady()) return false;
 
-  http.setTimeout(HTTP_TIMEOUT_MS);
-  addAuthHeaders(http, "GET", path, (const uint8_t *)"", 0, serverEpoch);
+    WiFiClient plainClient;
+    WiFiClientSecure secureClient;
+    HTTPClient http;
+    String url = activeBaseUrl() + path;
+    if (!beginHttpClient(http, plainClient, secureClient, url)) {
+      Serial.printf("GET %s begin failed%s\n", path.c_str(), attempt == 1 ? " (will retry)" : "");
+      closeUploadHttpClient();
+      delay(500);
+      continue;
+    }
 
-  int code = http.GET();
-  responseOut = http.getString();
-  http.end();
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    addAuthHeaders(http, "GET", path, (const uint8_t *)"", 0, serverEpoch);
 
-  Serial.printf("GET %s -> %d\n", path.c_str(), code);
+    int code = http.GET();
+    responseOut = http.getString();
+    http.end();
+
+    Serial.printf("GET %s -> %d%s\n", path.c_str(), code, (code < 0 && attempt == 1) ? " (will retry)" : "");
 #if DEBUG_HTTP_RESPONSES
-  if (responseOut.length()) Serial.println(responseOut);
+    if (responseOut.length()) Serial.println(responseOut);
 #endif
-  return code >= 200 && code < 300;
+    if (code >= 200 && code < 300) return true;
+    if (code >= 400 && code < 500) return false;
+
+    closeUploadHttpClient();
+    delay(500);
+  }
+
+  return false;
 }
 
 bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut) {
   WiFiClient plainClient;
   WiFiClientSecure secureClient;
   HTTPClient http;
-  String url = cfgBaseUrl() + pathAndQuery;
+  String url = activeBaseUrl() + pathAndQuery;
   if (!beginHttpClient(http, plainClient, secureClient, url)) return false;
 
   http.setTimeout(HTTP_TIMEOUT_MS);
@@ -286,7 +372,7 @@ bool signedPostBinary(const String &pathAndQuery, const uint8_t *body, size_t bo
 }
 
 bool signedPutBinary(const String &pathAndQuery, const uint8_t *body, size_t bodyLen, long serverEpoch, String &responseOut) {
-  String url = cfgBaseUrl() + pathAndQuery;
+  String url = activeBaseUrl() + pathAndQuery;
   bool connectionReused = false;
   if (!beginUploadHttpClient(url, connectionReused)) return false;
 

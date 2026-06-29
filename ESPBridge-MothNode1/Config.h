@@ -16,6 +16,7 @@
 #define DEFAULT_WIFI_SECURITY   "personal"
 
 #define DEFAULT_BASE_URL        "https://cerberus.tail1881ff.ts.net"
+#define SERVER_FALLBACK_BASE_URL "http://192.168.0.207:8001"
 #define DEFAULT_NODE_ID         ""
 #define DEFAULT_KEY_ID          ""
 #define DEFAULT_DEVICE_SECRET   ""
@@ -85,7 +86,9 @@
 // AudioMoth bridge protocol
 // ----------------------------
 #define MOTH_UART_BAUD               115200
-#define MOTH_UART_FAST_BAUD          921600
+// Keep equal to MOTH_UART_BAUD for the stable bridge path. Higher values enable
+// the experimental per-payload GETFAST mode and need fresh bench testing.
+#define MOTH_UART_FAST_BAUD          115200
 #define MOTH_READY_TIMEOUT_MS        65000
 #define MOTH_LINE_TIMEOUT_MS         6000
 #define MOTH_LIST_TIMEOUT_MS         60000
@@ -101,6 +104,8 @@
 #define SERVER_UPLOAD_CHUNK_BYTES    65536
 #define MOTH_UPLOAD_WINDOW_WAIT_MS   120000
 #define MOTH_UPLOAD_WINDOW_RETRY_MS  5000
+#define USB_BRIDGE_DEBUG_ON_SERVER_FAIL true
+#define USB_BRIDGE_DEBUG_WINDOW_MS   120000
 
 // Delete on AudioMoth only after server confirms full file upload.
 #define DELETE_AFTER_CONFIRMED_UPLOAD true

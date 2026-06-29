@@ -11,11 +11,27 @@ $sketchDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $projectRoot = Resolve-Path (Join-Path $sketchDir "..\..\..")
 $serverDir = Join-Path $projectRoot "Code\Server\MothServer-main\bat_node_system\server"
 $dbPath = Join-Path $serverDir "bat_nodes_v2.db"
-$pythonPath = Join-Path $serverDir ".venv\Scripts\python.exe"
+$pythonCandidates = @(
+  (Join-Path $serverDir ".venv\Scripts\python.exe"),
+  (Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"),
+  "python"
+)
+$pythonPath = $null
 $logDir = Join-Path $sketchDir "logs"
 
 if (!(Test-Path -LiteralPath $dbPath)) { throw "Server database not found: $dbPath" }
-if (!(Test-Path -LiteralPath $pythonPath)) { throw "Server Python not found: $pythonPath" }
+foreach ($candidate in $pythonCandidates) {
+  try {
+    $probe = & $candidate -c "import sqlite3; print('ok')" 2>$null
+    if ($LASTEXITCODE -eq 0 -and $probe -eq "ok") {
+      $pythonPath = $candidate
+      break
+    }
+  } catch {
+  }
+}
+
+if (!$pythonPath) { throw "No usable Python runtime found for queuing upload commands" }
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"

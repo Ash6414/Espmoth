@@ -292,6 +292,13 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
     }
   }
 
+  closeUploadHttpClient();
+  if (serverChunk) {
+    free(serverChunk);
+    serverChunk = nullptr;
+    Serial.printf("Released %u-byte upload buffer before finalizing file\n", SERVER_UPLOAD_CHUNK_BYTES);
+  }
+
   if (!serverFinishFile(serverEpoch, session)) {
     Serial.println("serverFinishFile failed");
     return false;

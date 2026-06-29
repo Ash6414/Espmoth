@@ -11,7 +11,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Keeps commands at 115200 baud and negotiates one-way 921600-baud file payloads when supported.
+- Keeps the production UART bridge at 115200 baud for commands and file payloads.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -147,17 +147,18 @@ If an upload is interrupted, `/v1/uploads/init` returns compact resume fields: `
 
 When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD total_kb=... free_kb=...` line before file entries. The ESP32 logs that size, posts `sd_total_kb`, `sd_free_kb`, and `sd_free_mb` with the manifest, and reports `sd_free_mb` on the next heartbeat.
 
-The matching AudioMoth firmware uses the EFM32 `UART1` hardware route on
-PB9/PB10, borrowed from the stock GPS interface resources. GPS support is
-disabled so the bridge owns PA7, PA8, PB9, PB10, and UART1. Control starts at
-115200 baud for reliable discovery and all commands. The ESP uses `FASTCAP` to
-arm one-way 921600-baud transfers for `GETFAST` file payloads. Each 8 KiB payload
-uses a 1024-byte training preamble; lower negotiated rates use 128 bytes. Both boards automatically return to
-115200. Older AudioMoth bridge firmware falls back to 4 KiB reads at 115200.
-The ESP aggregates those UART reads into 64 KiB HTTPS PUT requests to reduce
-server round trips while retaining enough contiguous heap for TLS. Live tests
-showed that 128 KiB could not allocate and 96 KiB starved the HTTPS client.
-The ESP USB debug console continues to use 115200 baud.
+The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
+interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
+PB10, and the bridge UART pins. The stable field build keeps AudioMoth commands
+and file payloads at 115200 baud. The ESP reads 4 KiB UART pieces and aggregates
+them into 64 KiB HTTPS PUT requests to reduce server round trips while retaining
+enough contiguous heap for TLS. Live tests showed that 128 KiB could not allocate
+and 96 KiB starved the HTTPS client.
+
+The AudioMoth firmware still exposes experimental high-baud `FASTCAP`/`GETFAST`
+support, but the ESP build leaves `MOTH_UART_FAST_BAUD` equal to
+`MOTH_UART_BAUD` until the high-baud recovery path is bench-tested with a fresh
+SD file. The ESP USB debug console continues to use 115200 baud.
 
 ## Command types supported
 

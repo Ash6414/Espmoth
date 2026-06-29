@@ -35,6 +35,15 @@ void bridgeFlushInput() {
   while (MothSerial.available()) MothSerial.read();
 }
 
+void bridgeRestartUart(uint32_t baud, bool clearInput) {
+  MothSerial.flush();
+  MothSerial.end();
+  delay(2);
+  MothSerial.setRxBufferSize(MOTH_CHUNK_BYTES + 1024);
+  MothSerial.begin(baud, SERIAL_8N1, PIN_MOTH_UART_RX, PIN_MOTH_UART_TX);
+  if (clearInput) bridgeFlushInput();
+}
+
 void bridgeSendLine(const String &line) {
 #if DEBUG_BRIDGE_LINES
   Serial.print("MOTH << ");
@@ -455,7 +464,7 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
     MothSerial.updateBaudRate(MOTH_UART_FAST_BAUD);
     bool magicFound = bridgeReadFastMagic(MOTH_FAST_MAGIC_TIMEOUT_MS);
     bool payloadRead = magicFound && bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS);
-    MothSerial.updateBaudRate(MOTH_UART_BAUD);
+    bridgeRestartUart(MOTH_UART_BAUD, false);
 
     if (!magicFound) {
       Serial.printf("GETFAST preamble timeout at offset %lu\n", (unsigned long)offset);
@@ -470,10 +479,14 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
     }
 
     String doneLine;
-    if (!bridgeReadExpectedLine("OK FASTDATA", doneLine, MOTH_FAST_DONE_TIMEOUT_MS)) {
-      Serial.printf("GETFAST completion missing at offset %lu; got '%s'\n",
-                    (unsigned long)offset, doneLine.c_str());
-      return false;
+    if (!bridgeReadExpectedLine("OK FASTDATA", doneLine, 250)) {
+      if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
+        Serial.printf("GETFAST completion error at offset %lu; got '%s'\n",
+                      (unsigned long)offset, doneLine.c_str());
+        return false;
+      }
+      Serial.printf("GETFAST completion not observed at offset %lu; validating payload by CRC\n",
+                    (unsigned long)offset);
     }
   } else if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS)) {
     Serial.printf("GET binary timeout at offset %lu length %u\n",
@@ -509,7 +522,7 @@ void bridgeDone() {
 void bridgeRestoreDefaultBaud() {
   if (!bridgeFastBaudActive) return;
   bridgeFastBaudActive = false;
-  bridgeFlushInput();
+  bridgeRestartUart(MOTH_UART_BAUD, true);
 }
 
 uint32_t crc32Update(uint32_t crc, const uint8_t *data, uint32_t length) {
