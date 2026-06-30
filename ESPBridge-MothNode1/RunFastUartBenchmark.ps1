@@ -141,12 +141,15 @@ try {
       } elseif ($clean -like "MOTH_TEST_STREAM OK bytes=*") {
         $summaryLine = $clean
         $result = "PASS"
-      } elseif ($clean -like "USB_DEBUG_MOTH_TEST_STREAM MOTH_TEST_STREAM ok bytes=*") {
-        $summaryLine = $clean
-        $result = "PASS"
-      } elseif ($clean -like "*TESTSTREAM*failed*" -or
-                $clean -like "*TESTSTREAM*timeout*" -or
-                $clean -like "*TESTSTREAM*CRC mismatch*" -or
+  } elseif ($clean -like "USB_DEBUG_MOTH_TEST_STREAM MOTH_TEST_STREAM ok bytes=*") {
+    $summaryLine = $clean
+    $result = "PASS"
+  } elseif ($clean -like "*control resync failed after fast stream*") {
+    $failureLine = $clean
+    if ($result -ne "UNSUPPORTED") { $result = "OLD_MOTH_BIN" }
+  } elseif ($clean -like "*TESTSTREAM*failed*" -or
+            $clean -like "*TESTSTREAM*timeout*" -or
+            $clean -like "*TESTSTREAM*CRC mismatch*" -or
                 $clean -like "*TESTSTREAM*payload pattern mismatch*") {
         $failureLine = $clean
         if ($result -ne "UNSUPPORTED") { $result = "FAILED" }
@@ -194,6 +197,13 @@ if ($unsupportedLine) {
   Write-Host "AudioMoth does not support TESTSTREAM yet:"
   Write-Host $unsupportedLine
   Write-Host "Flash the staged CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin, return AudioMoth to CUSTOM mode, then rerun this benchmark."
+  exit 6
+}
+
+if ($failureLine -and $failureLine -like "*control resync failed after fast stream*") {
+  Write-Host "Fast data moved, but AudioMoth did not return to 115200 command mode:"
+  Write-Host $failureLine
+  Write-Host "Flash Code\\Moth Firmware\\CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin, return AudioMoth to CUSTOM mode, then rerun this benchmark."
   exit 6
 }
 
