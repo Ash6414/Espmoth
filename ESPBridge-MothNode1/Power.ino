@@ -55,9 +55,9 @@ bool powerAllowsWiFi(const PowerState &p) {
 }
 
 bool powerAllowsUpload(const PowerState &p, bool forced) {
+  if (forced) return true;
   if (p.batteryV < BATTERY_SENSE_INVALID_BELOW_V) return false;
   if (p.batteryV < MIN_UPLOAD_BATTERY_V) return false;
-  if (forced) return true;
 #if REQUIRE_CHARGING_FOR_AUTO_UPLOAD
   return p.charging || p.chargeDone;
 #else

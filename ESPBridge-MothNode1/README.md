@@ -177,7 +177,11 @@ MOTH_TEST_STREAM
 OPEN_SETUP
 ```
 
-`UPLOAD_NOW` bypasses the solar/charging requirement, but still refuses upload below `MIN_UPLOAD_BATTERY_V`.
+`UPLOAD_NOW` bypasses the solar/charging requirement and setup-time upload
+threshold so USB/debug recovery can pull files without rewiring the battery
+sense line. During transfer, a valid low battery reading still stops the upload
+at `MIN_ACTIVE_BATTERY_V`; impossible sub-1 V readings are treated as an absent
+sense wire.
 `MOTH_LIST` returns SD free/total size and a short file preview.
 `MOTH_TEST_STREAM` measures the fast AudioMoth-to-ESP UART path without reading SD.
 `OPEN_SETUP` preserves the current node identity and restarts once into the local setup portal so Wi-Fi or server URL can be changed.

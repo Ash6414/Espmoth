@@ -176,6 +176,25 @@ bool bridgeReadExpectedLineIgnoringNoise(const char *expectedPrefix, String &lin
   return false;
 }
 
+void bridgeReturnToDefaultAfterStream() {
+  MothSerial.updateBaudRate(MOTH_UART_BAUD);
+  bridgeCurrentBaud = MOTH_UART_BAUD;
+  delay(20);
+}
+
+bool bridgeProbeDefaultControl(const char *context) {
+  for (uint8_t attempt = 0; attempt < 4; attempt += 1) {
+    bridgeSendLine("PING");
+    String line;
+    if (bridgeReadExpectedLineIgnoringNoise("OK PONG", line, 1500)) {
+      return true;
+    }
+    delay(100);
+  }
+  Serial.printf("%s control resync failed after fast stream\n", context);
+  return false;
+}
+
 bool bridgeSessionBaudRejected(uint32_t baud) {
   for (uint8_t i = 0; i < bridgeRejectedSessionBaudCount; i += 1) {
     if (bridgeRejectedSessionBauds[i] == baud) return true;
@@ -650,17 +669,20 @@ bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &recei
     received += frameLength;
   }
 
-  bridgeRestartUart(MOTH_UART_BAUD, false);
+  bridgeReturnToDefaultAfterStream();
   elapsedMsOut = millis() - startMs;
 
   String doneLine;
-  if (!bridgeReadExpectedLine("OK TESTSTREAM", doneLine, MOTH_FAST_DONE_TIMEOUT_MS)) {
+  if (!bridgeReadExpectedLine("OK TESTSTREAM", doneLine, 150)) {
     if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
       Serial.printf("TESTSTREAM completion error: %s\n", doneLine.c_str());
       return false;
     }
     Serial.printf("TESTSTREAM completion not observed; validated %lu bytes by frame CRC\n",
                   (unsigned long)received);
+  }
+  if (!bridgeProbeDefaultControl("TESTSTREAM")) {
+    return false;
   }
 
   receivedOut = received;
@@ -785,9 +807,9 @@ bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requeste
     received += frameLength;
   }
 
-  bridgeRestartUart(MOTH_UART_BAUD, false);
+  bridgeReturnToDefaultAfterStream();
   String doneLine;
-  if (!bridgeReadExpectedLine("OK STREAM", doneLine, MOTH_FAST_DONE_TIMEOUT_MS)) {
+  if (!bridgeReadExpectedLine("OK STREAM", doneLine, 150)) {
     if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
       Serial.printf("GETSTREAM completion error: %s\n", doneLine.c_str());
       fatalOut = true;
@@ -795,6 +817,10 @@ bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requeste
     }
     Serial.printf("GETSTREAM completion not observed; validated %lu bytes by frame CRC\n",
                   (unsigned long)received);
+  }
+  if (!bridgeProbeDefaultControl("GETSTREAM")) {
+    fatalOut = true;
+    return false;
   }
 
   result.path = path;

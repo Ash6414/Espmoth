@@ -388,7 +388,7 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
     }
 
     PowerState p = readPowerState();
-    if (p.batteryV < MIN_ACTIVE_BATTERY_V) {
+    if (p.batteryV >= BATTERY_SENSE_INVALID_BELOW_V && p.batteryV < MIN_ACTIVE_BATTERY_V) {
       Serial.printf("Battery under load fell below emergency cutoff: %.3f V\n", p.batteryV);
       return false;
     }

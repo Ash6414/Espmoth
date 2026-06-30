@@ -81,11 +81,17 @@ void pollCommands(long serverEpoch, const PowerState &p) {
     Serial.println("Command JSON parse failed");
     return;
   }
+  if (doc.overflowed()) {
+    Serial.println("Command JSON exceeded parser capacity");
+    return;
+  }
 
   JsonArray cmds = doc["commands"].as<JsonArray>();
+  Serial.printf("Command poll returned %u command(s)\n", (unsigned)cmds.size());
   for (JsonObject cmd : cmds) {
     int id = cmd["id"] | -1;
     String type = cmd["type"] | "";
+    Serial.printf("Handling command id=%d type=%s\n", id, type.c_str());
 
     if (type == "PING") {
       postHeartbeat(serverEpoch, p, lastUpload);
