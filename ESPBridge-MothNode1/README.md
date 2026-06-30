@@ -11,7 +11,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Keeps AudioMoth commands at 115200 baud and uses one-way 921600-baud streaming when the matching AudioMoth bin supports `GETSTREAM`.
+- Keeps AudioMoth commands at 115200 baud and uses one-way 460800-baud streaming when the matching AudioMoth bin supports `GETSTREAM`.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -150,12 +150,13 @@ When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD tota
 The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
 interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
 PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
-ESP first tries `GETSTREAM`: one slow command starts a one-way 921600-baud
+ESP first tries `GETSTREAM`: one slow command starts a one-way 460800-baud
 AudioMoth-to-ESP stream of up to 64 KiB, framed as CRC32-checked 8 KiB pieces.
 The ESP writes the validated stream directly into the 64 KiB HTTPS PUT buffer.
 For bench testing without a recording on the SD card, `MOTH_TEST_STREAM` asks
-AudioMoth to send a deterministic 1 MiB max stream over the same 921600-baud
-frame parser and reports CRC-checked KiB/s.
+AudioMoth to send a deterministic 1 MiB max stream. The diagnostic probes
+921600 first, then falls back to 460800 and 230400, reporting the highest
+CRC-checked stable rate.
 
 If `GETSTREAM` is unavailable, the ESP falls back to the proven 115200-baud
 `GET` path with 4 KiB UART reads aggregated into 64 KiB server PUT requests.
@@ -204,6 +205,26 @@ Bridge READY after ...
 ```
 
 If it prints `rx_bytes=0`, `busy_low_seen=0`, and `esp_req=1`, the ESP32 is asserting the request pin and sending UART pings but AudioMoth is not replying. In that case, check that AudioMoth is flashed with the request-service bin and is actually running in CUSTOM mode.
+
+## Fast UART benchmark
+
+After flashing the matching AudioMoth bin with `TESTSTREAM`, run:
+
+```bat
+RunFastUartBenchmark.cmd
+```
+
+Or run it directly on the current ESP port:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\RunFastUartBenchmark.ps1 -Port COM9 -MonitorSeconds 180
+```
+
+The benchmark queues `MOTH_TEST_STREAM`, resets the ESP32, and validates a
+deterministic 1 MiB AudioMoth-to-ESP stream by trying 921600, 460800, then
+230400 baud. It reports the highest CRC-checked stable UART rate and exits with
+a clear unsupported-firmware message if AudioMoth has not been flashed with the
+`TESTSTREAM` bin yet.
 
 ## Upload throughput benchmark
 

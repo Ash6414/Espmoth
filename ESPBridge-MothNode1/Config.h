@@ -94,11 +94,16 @@
 #define MOTH_SESSION_RETRY_BAUD_2    230400
 #define MOTH_SESSION_RESET_MS        4500
 // Preferred fast path: one 115200 command starts a one-way AudioMoth->ESP32
-// stream at high baud. ESP-to-AudioMoth commands remain at 115200.
+// stream at the fastest measured-stable baud. ESP-to-AudioMoth commands remain
+// at 115200.
 #define MOTH_STREAM_FAST_ENABLED     1
-#define MOTH_STREAM_FAST_BAUD        921600
+#define MOTH_STREAM_FAST_BAUD        460800
+#define MOTH_STREAM_TEST_BAUD_1      230400
+#define MOTH_STREAM_TEST_BAUD_2      460800
+#define MOTH_STREAM_TEST_BAUD_3      921600
 #define MOTH_STREAM_FRAME_TIMEOUT_MS 4000
 #define MOTH_TEST_STREAM_BYTES       1048576
+#define MOTH_UART_RX_BUFFER_BYTES    32768
 // Per-payload GETFAST is kept off in the field build; whole-session high baud
 // is simpler to recover from and falls back cleanly to 115200.
 #define MOTH_UART_FAST_BAUD          115200

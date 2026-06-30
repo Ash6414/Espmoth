@@ -132,34 +132,55 @@ String runAudioMothListDiagnostic(long serverEpoch) {
 }
 
 String runAudioMothTestStreamDiagnostic(long serverEpoch) {
-  uint32_t received = 0;
-  uint32_t elapsedMs = 0;
-  uint32_t crc = 0;
+  const uint32_t bauds[] = {
+    MOTH_STREAM_TEST_BAUD_3,
+    MOTH_STREAM_TEST_BAUD_2,
+    MOTH_STREAM_TEST_BAUD_1,
+  };
+  uint32_t lastFailBaud = 0;
 
-  if (!openBridgeSession(serverEpoch)) {
-    return "MOTH_TEST_STREAM failed: bridge not ready";
+  for (size_t i = 0; i < sizeof(bauds) / sizeof(bauds[0]); i += 1) {
+    uint32_t baud = bauds[i];
+    if (!openBridgeSession(serverEpoch)) {
+      lastFailBaud = baud;
+      continue;
+    }
+
+    uint32_t received = 0;
+    uint32_t elapsedMs = 0;
+    uint32_t crc = 0;
+
+    bool ok = bridgeRunTestStream(MOTH_TEST_STREAM_BYTES, baud, received, elapsedMs, crc);
+    closeBridgeSession();
+    if (!ok) {
+      lastFailBaud = baud;
+      Serial.printf("MOTH_TEST_STREAM failed at %lu baud; trying lower baud if available\n", (unsigned long)baud);
+      if (i + 1 < sizeof(bauds) / sizeof(bauds[0])) {
+        delay(baud >= 921600UL ? 15000 : 30000);
+      }
+      continue;
+    }
+
+    float kibPerSecond = elapsedMs > 0 ? ((float)received * 1000.0f) / (1024.0f * (float)elapsedMs) : 0.0f;
+    Serial.printf("MOTH_TEST_STREAM OK bytes=%lu baud=%lu ms=%lu rate=%.1f KiB/s crc=%08lX\n",
+                  (unsigned long)received,
+                  (unsigned long)baud,
+                  (unsigned long)elapsedMs,
+                  kibPerSecond,
+                  (unsigned long)crc);
+
+    String msg = "MOTH_TEST_STREAM ok bytes=" + String(received);
+    msg += " baud=" + String(baud);
+    msg += " ms=" + String(elapsedMs);
+    msg += " kib_s=" + String(kibPerSecond, 1);
+    msg += " crc=" + String(crc, HEX);
+    if (lastFailBaud != 0) {
+      msg += " failed_higher_baud=" + String(lastFailBaud);
+    }
+    return msg;
   }
 
-  bool ok = bridgeRunTestStream(MOTH_TEST_STREAM_BYTES, MOTH_STREAM_FAST_BAUD, received, elapsedMs, crc);
-  closeBridgeSession();
-  if (!ok) {
-    return "MOTH_TEST_STREAM failed";
-  }
-
-  float kibPerSecond = elapsedMs > 0 ? ((float)received * 1000.0f) / (1024.0f * (float)elapsedMs) : 0.0f;
-  Serial.printf("MOTH_TEST_STREAM OK bytes=%lu baud=%lu ms=%lu rate=%.1f KiB/s crc=%08lX\n",
-                (unsigned long)received,
-                (unsigned long)MOTH_STREAM_FAST_BAUD,
-                (unsigned long)elapsedMs,
-                kibPerSecond,
-                (unsigned long)crc);
-
-  String msg = "MOTH_TEST_STREAM ok bytes=" + String(received);
-  msg += " baud=" + String(MOTH_STREAM_FAST_BAUD);
-  msg += " ms=" + String(elapsedMs);
-  msg += " kib_s=" + String(kibPerSecond, 1);
-  msg += " crc=" + String(crc, HEX);
-  return msg;
+  return "MOTH_TEST_STREAM failed all_bauds";
 }
 
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {

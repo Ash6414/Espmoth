@@ -9,7 +9,7 @@ void initMothBridge() {
 
   /* Leave the configured UART pins owned by UART2 after begin(). Calling pinMode() on
      either UART pin after this can detach the ESP32 pin matrix from Serial2. */
-  MothSerial.setRxBufferSize(MOTH_CHUNK_BYTES + 1024);
+  MothSerial.setRxBufferSize(MOTH_UART_RX_BUFFER_BYTES);
   MothSerial.begin(MOTH_UART_BAUD, SERIAL_8N1, PIN_MOTH_UART_RX, PIN_MOTH_UART_TX);
   while (MothSerial.available()) MothSerial.read();
 }
@@ -43,7 +43,7 @@ void bridgeRestartUart(uint32_t baud, bool clearInput) {
   MothSerial.flush();
   MothSerial.end();
   delay(2);
-  MothSerial.setRxBufferSize(MOTH_CHUNK_BYTES + 1024);
+  MothSerial.setRxBufferSize(MOTH_UART_RX_BUFFER_BYTES);
   MothSerial.begin(baud, SERIAL_8N1, PIN_MOTH_UART_RX, PIN_MOTH_UART_TX);
   bridgeCurrentBaud = baud;
   if (clearInput) bridgeFlushInput();
@@ -625,7 +625,18 @@ bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &recei
       return false;
     }
 
-    for (uint16_t i = 0; i < frameLength; i += 1) {
+    uint16_t headSamples = frameLength < 8 ? frameLength : 8;
+    for (uint16_t i = 0; i < headSamples; i += 1) {
+      uint8_t expected = (uint8_t)((frameOffset + i) & 0xFFU);
+      if (mothChunk[i] != expected) {
+        Serial.printf("TESTSTREAM payload pattern mismatch at offset %lu: got=%u expected=%u\n",
+                      (unsigned long)(frameOffset + i), mothChunk[i], expected);
+        bridgeRestartUart(MOTH_UART_BAUD, true);
+        return false;
+      }
+    }
+    uint16_t tailStart = frameLength > 16 ? frameLength - 8 : headSamples;
+    for (uint16_t i = tailStart; i < frameLength; i += 1) {
       uint8_t expected = (uint8_t)((frameOffset + i) & 0xFFU);
       if (mothChunk[i] != expected) {
         Serial.printf("TESTSTREAM payload pattern mismatch at offset %lu: got=%u expected=%u\n",
@@ -940,13 +951,18 @@ uint32_t bridgeCurrentBaudRate() {
 }
 
 uint32_t crc32Update(uint32_t crc, const uint8_t *data, uint32_t length) {
+  static const uint32_t table[16] = {
+    0x00000000UL, 0x1DB71064UL, 0x3B6E20C8UL, 0x26D930ACUL,
+    0x76DC4190UL, 0x6B6B51F4UL, 0x4DB26158UL, 0x5005713CUL,
+    0xEDB88320UL, 0xF00F9344UL, 0xD6D6A3E8UL, 0xCB61B38CUL,
+    0x9B64C2B0UL, 0x86D3D2D4UL, 0xA00AE278UL, 0xBDBDF21CUL,
+  };
+
   crc = ~crc;
   for (uint32_t i = 0; i < length; i++) {
     crc ^= data[i];
-    for (uint32_t j = 0; j < 8; j++) {
-      uint32_t mask = -(crc & 1U);
-      crc = (crc >> 1) ^ (0xEDB88320UL & mask);
-    }
+    crc = (crc >> 4) ^ table[crc & 0x0FUL];
+    crc = (crc >> 4) ^ table[crc & 0x0FUL];
   }
   return ~crc;
 }
