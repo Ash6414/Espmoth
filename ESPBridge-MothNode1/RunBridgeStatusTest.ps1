@@ -246,7 +246,7 @@ if ($responseMessage) {
   if ($CommandType -eq "MOTH_STATUS" -and $responseMessage -like "OK STATUS*") {
     if ($responseMessage -like "*proto=4*" -and
         $responseMessage -like "*pipe=1*" -and
-        $responseMessage -like "*pipe_baud=921600*" -and
+        $responseMessage -like "*pipe_baud=230400*" -and
         $responseMessage -like "*pipe_bytes=131072*" -and
         $responseMessage -like "*pipe_frame=2048*" -and
         $responseMessage -like "*pipe_ack=1*") {

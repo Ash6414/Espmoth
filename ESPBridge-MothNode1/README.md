@@ -11,7 +11,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Keeps AudioMoth commands at 115200 baud while using 921600-baud ACKed `GETPIPE` frames when the matching AudioMoth bin supports them.
+- Keeps AudioMoth commands at 115200 baud while using tested-stable 230400-baud ACKed `GETPIPE` frames when the matching AudioMoth bin supports them.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -151,7 +151,7 @@ The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
 interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
 PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
 ESP first tries `GETPIPE`: one 115200-baud command opens the SD file once, then
-AudioMoth sends repeated 921600-baud blocks of up to 128 KiB, framed as
+AudioMoth sends repeated 230400-baud blocks of up to 128 KiB, framed as
 CRC32-checked 2 KiB pieces. The ESP ACKs each validated frame at the fast baud;
 AudioMoth resends a frame on NAK or ACK timeout. After each validated block,
 AudioMoth returns to 115200 and waits inside the same command for `NEXT

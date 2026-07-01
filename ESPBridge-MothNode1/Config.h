@@ -90,12 +90,14 @@
 // AudioMoth bridge protocol
 // ----------------------------
 #define MOTH_UART_BAUD               115200
-// Production fast path: one 115200 GETPIPE command keeps the AudioMoth SD file
-// open and sends repeated 921600-baud blocks. Each UART frame is ACKed at the
+// Production path: one 115200 GETPIPE command keeps the AudioMoth SD file open
+// and sends repeated 230400-baud blocks. 230400 passed a full 1 MiB CRC-clean
+// MOTH_TEST_STREAM on the field wiring; 460800 and 921600 showed CRC errors.
+// Each UART frame is ACKed at the
 // fast baud after CRC validation; the ESP returns to 115200 for NEXT only after
 // the server accepts the previous block.
 #define MOTH_PIPE_FAST_ENABLED       1
-#define MOTH_PIPE_FAST_BAUD          921600
+#define MOTH_PIPE_FAST_BAUD          230400
 #define MOTH_PIPE_FRAME_RETRIES      3
 #define MOTH_STREAM_TEST_BAUD_1      230400
 #define MOTH_STREAM_TEST_BAUD_2      460800
