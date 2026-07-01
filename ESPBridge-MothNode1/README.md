@@ -153,9 +153,9 @@ PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
 ESP first tries `GETSTREAM`: one slow command starts a one-way 230400-baud
 AudioMoth-to-ESP stream of up to 64 KiB, framed as CRC32-checked 8 KiB pieces.
 The ESP writes the validated stream directly into the 64 KiB HTTPS PUT buffer.
-Before each stream request, the ESP drains idle bridge chatter and verifies
-115200-baud control with `PING` so a closed or wedged service window is caught
-before another file chunk is requested.
+Before each stream request, the ESP verifies 115200-baud control with `PING`,
+logs whether a failed probe saw sleep, silence, or an error line, then drains
+idle chatter immediately before sending the next `GETSTREAM` header.
 For bench testing without a recording on the SD card, `MOTH_TEST_STREAM` asks
 AudioMoth to send a deterministic 1 MiB max stream. The diagnostic probes
 921600 first, then falls back to 460800 and 230400, reporting the highest

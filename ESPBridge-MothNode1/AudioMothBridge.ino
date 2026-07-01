@@ -198,15 +198,30 @@ void bridgeReturnToDefaultAfterStream() {
 }
 
 bool bridgeProbeDefaultControl(const char *context) {
+  String lastLine;
+  bool sawLine = false;
   for (uint8_t attempt = 0; attempt < 4; attempt += 1) {
     bridgeSendLine("PING");
-    String line;
-    if (bridgeReadExpectedLineIgnoringNoise("OK PONG", line, 1500)) {
-      return true;
+    uint32_t start = millis();
+    while (millis() - start < 1500) {
+      String line;
+      uint32_t remaining = 1500 - (millis() - start);
+      uint32_t slice = remaining > 500 ? 500 : remaining;
+      if (slice == 0) break;
+      if (!bridgeReadLine(line, slice)) continue;
+
+      sawLine = true;
+      lastLine = line;
+      if (line == "OK PONG" || line.startsWith("OK PONG ")) return true;
+      if (line == "OK BRIDGE_SLEEP") break;
     }
     delay(100);
   }
-  Serial.printf("%s control resync failed\n", context);
+  if (sawLine) {
+    Serial.printf("%s control resync failed; last line='%s'\n", context, lastLine.c_str());
+  } else {
+    Serial.printf("%s control resync failed; no UART lines received\n", context);
+  }
   return false;
 }
 
