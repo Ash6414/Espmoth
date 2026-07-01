@@ -16,12 +16,7 @@ void initMothBridge() {
 
 uint32_t bridgeRawBytesRead = 0;
 uint32_t bridgeLinesRead = 0;
-bool bridgeFastBaudActive = false;
-bool bridgeSessionBaudActive = false;
 uint32_t bridgeCurrentBaud = MOTH_UART_BAUD;
-uint32_t bridgeRejectedSessionBauds[3] = {0, 0, 0};
-uint8_t bridgeRejectedSessionBaudCount = 0;
-bool bridgeFastStreamSupported = true;
 bool bridgePipeStreamSupported = true;
 
 void bridgeResetStats() {
@@ -135,13 +130,8 @@ bool bridgeReadMagic(const uint8_t *magic, uint32_t magicLength, uint32_t timeou
   return false;
 }
 
-bool bridgeReadFastMagic(uint32_t timeoutMs) {
-  static const uint8_t magic[] = {0xA5, 0x5A, 0xC3, 0x3C};
-  return bridgeReadMagic(magic, sizeof(magic), timeoutMs);
-}
-
 bool bridgeIsAsyncLine(const String &line) {
-  return line == "OK BRIDGE_READY" || line == "OK FAST_READY" || line == "OK PONG";
+  return line == "OK BRIDGE_READY" || line == "OK PONG";
 }
 
 bool bridgeReadExpectedLine(const char *expectedPrefix, String &lineOut, uint32_t timeoutMs) {
@@ -227,38 +217,6 @@ bool bridgeProbeDefaultControl(const char *context) {
   return false;
 }
 
-bool bridgeSessionBaudRejected(uint32_t baud) {
-  for (uint8_t i = 0; i < bridgeRejectedSessionBaudCount; i += 1) {
-    if (bridgeRejectedSessionBauds[i] == baud) return true;
-  }
-  return false;
-}
-
-void bridgeRejectSessionBaud(uint32_t baud) {
-  if (baud == MOTH_UART_BAUD || bridgeSessionBaudRejected(baud)) return;
-  if (bridgeRejectedSessionBaudCount >= 3) return;
-  bridgeRejectedSessionBauds[bridgeRejectedSessionBaudCount++] = baud;
-}
-
-bool bridgeReopenDefaultSession() {
-  mothRequest(false);
-  bridgeSessionBaudActive = false;
-  bridgeFastBaudActive = false;
-  bridgeRestartUart(MOTH_UART_BAUD, true);
-  delay(MOTH_SESSION_RESET_MS);
-  mothRequest(true);
-
-  if (!bridgeWaitReady(MOTH_READY_TIMEOUT_MS)) {
-    Serial.println("AudioMoth did not reopen at default baud after high-baud probe");
-    return false;
-  }
-  if (!bridgePing()) {
-    Serial.println("AudioMoth default-baud PING failed after high-baud probe");
-    return false;
-  }
-  return true;
-}
-
 bool bridgeWaitReady(uint32_t timeoutMs) {
   bridgeResetStats();
   String line;
@@ -332,99 +290,6 @@ bool bridgePing() {
   return false;
 }
 
-bool bridgeTrySessionBaud(uint32_t baud) {
-  if (baud == MOTH_UART_BAUD) return true;
-  if (bridgeSessionBaudRejected(baud)) return false;
-
-  Serial.printf("Trying AudioMoth session baud %lu\n", (unsigned long)baud);
-  bridgeSendLine("BAUD " + String(baud));
-
-  String line;
-  if (!bridgeReadExpectedLine("OK BAUD", line, MOTH_LINE_TIMEOUT_MS)) {
-    Serial.printf("AudioMoth BAUD %lu was not accepted: %s\n",
-                  (unsigned long)baud, line.length() ? line.c_str() : "no response");
-    bridgeRejectSessionBaud(baud);
-    return false;
-  }
-
-  unsigned long acceptedBaud = 0;
-  if (sscanf(line.c_str(), "OK BAUD %lu", &acceptedBaud) != 1 || acceptedBaud != baud) {
-    Serial.printf("AudioMoth BAUD response mismatch: %s\n", line.c_str());
-    bridgeRejectSessionBaud(baud);
-    return false;
-  }
-
-  bridgeRestartUart(baud, true);
-  if (!bridgeReadExpectedLineIgnoringNoise("OK FAST_READY", line, MOTH_FAST_DONE_TIMEOUT_MS)) {
-    Serial.printf("AudioMoth session baud %lu did not produce FAST_READY: %s\n",
-                  (unsigned long)baud, line.length() ? line.c_str() : "no response");
-    bridgeRejectSessionBaud(baud);
-    return false;
-  }
-
-  if (!bridgePing()) {
-    Serial.printf("AudioMoth session baud %lu failed PING proof\n", (unsigned long)baud);
-    bridgeRejectSessionBaud(baud);
-    return false;
-  }
-
-  bridgeSessionBaudActive = true;
-  bridgeFastBaudActive = false;
-  Serial.printf("AudioMoth session baud active at %lu; using %u-byte UART DATA chunks\n",
-                (unsigned long)baud, MOTH_CHUNK_BYTES);
-  return true;
-}
-
-bool bridgeEnableFastBaud() {
-  bridgeFastBaudActive = false;
-  bridgeSessionBaudActive = false;
-
-#if MOTH_SESSION_FAST_ENABLED
-  const uint32_t sessionCandidates[] = {
-    MOTH_SESSION_FAST_BAUD,
-    MOTH_SESSION_RETRY_BAUD_1,
-    MOTH_SESSION_RETRY_BAUD_2
-  };
-
-  for (uint8_t i = 0; i < sizeof(sessionCandidates) / sizeof(sessionCandidates[0]); i += 1) {
-    uint32_t baud = sessionCandidates[i];
-    if (baud <= MOTH_UART_BAUD || bridgeSessionBaudRejected(baud)) continue;
-    if (bridgeTrySessionBaud(baud)) return true;
-
-    Serial.printf("Falling back from failed session baud %lu\n", (unsigned long)baud);
-    if (!bridgeReopenDefaultSession()) return false;
-  }
-#endif
-
-  if (MOTH_UART_FAST_BAUD == MOTH_UART_BAUD) return true;
-
-  bridgeSendLine("FASTCAP " + String(MOTH_UART_FAST_BAUD));
-  String line;
-  if (!bridgeReadExpectedLine("OK FASTCAP", line, MOTH_LINE_TIMEOUT_MS)) {
-    Serial.printf("AudioMoth fast payload mode is unavailable; continuing at %u baud (%s)\n",
-                  MOTH_UART_BAUD, line.length() ? line.c_str() : "no response");
-    bridgeFlushInput();
-    return true;
-  }
-
-  unsigned long negotiatedBaud = 0;
-  unsigned int maxChunk = 0;
-  if (sscanf(line.c_str(), "OK FASTCAP %lu %u", &negotiatedBaud, &maxChunk) != 2 ||
-      negotiatedBaud != MOTH_UART_FAST_BAUD || maxChunk < MOTH_CHUNK_BYTES) {
-    Serial.printf("AudioMoth returned an invalid fast payload capability: %s\n", line.c_str());
-    return true;
-  }
-
-  bridgeFastBaudActive = true;
-  Serial.printf("AudioMoth fast payload mode armed at %u baud with %u-byte UART chunks\n",
-                MOTH_UART_FAST_BAUD, MOTH_CHUNK_BYTES);
-  return true;
-}
-
-uint32_t bridgeTransferChunkBytes() {
-  return (bridgeSessionBaudActive || bridgeFastBaudActive) ? MOTH_CHUNK_BYTES : MOTH_LEGACY_CHUNK_BYTES;
-}
-
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds) {
   String cmd = "TIME " + String(epochUtc) + " " + String(milliseconds);
   String line;
@@ -455,29 +320,6 @@ void bridgeApplyStatusCapabilities(const String &status) {
   unsigned long protocol = 0;
   bool hasProtocol = bridgeStatusFieldUInt(status, "proto", protocol);
 
-#if MOTH_STREAM_FAST_ENABLED
-  unsigned long stream = 0;
-  unsigned long streamBaud = 0;
-  unsigned long streamBytes = 0;
-  bool hasStream = bridgeStatusFieldUInt(status, "stream", stream);
-  bool hasStreamBaud = bridgeStatusFieldUInt(status, "stream_baud", streamBaud);
-  bool hasStreamBytes = bridgeStatusFieldUInt(status, "stream_bytes", streamBytes);
-
-  if (!hasStream || !hasStreamBaud || !hasStreamBytes) {
-    if (bridgeFastStreamSupported) {
-      Serial.println("AudioMoth STATUS lacks stream capability fields; using legacy GET until a protocol v2/v3 AudioMoth bin is flashed");
-    }
-    bridgeFastStreamSupported = false;
-  } else if (stream != 1 || streamBaud != MOTH_STREAM_FAST_BAUD || streamBytes < SERVER_UPLOAD_CHUNK_BYTES) {
-    Serial.printf("AudioMoth stream capability mismatch: stream=%lu stream_baud=%lu stream_bytes=%lu expected_baud=%u expected_bytes=%u\n",
-                  stream, streamBaud, streamBytes, MOTH_STREAM_FAST_BAUD, SERVER_UPLOAD_CHUNK_BYTES);
-    bridgeFastStreamSupported = false;
-  } else {
-    bridgeFastStreamSupported = true;
-    Serial.printf("AudioMoth stream capability OK: baud=%lu bytes=%lu\n", streamBaud, streamBytes);
-  }
-#endif
-
 #if MOTH_PIPE_FAST_ENABLED
   unsigned long pipe = 0;
   unsigned long pipeBaud = 0;
@@ -492,7 +334,7 @@ void bridgeApplyStatusCapabilities(const String &status) {
 
   if (!hasProtocol || protocol < 4 || !hasPipe || !hasPipeBaud || !hasPipeBytes || !hasPipeFrame || !hasPipeAck) {
     if (bridgePipeStreamSupported) {
-      Serial.println("AudioMoth STATUS lacks protocol v4 ACKed pipe fields; using GETSTREAM/GET until the v4 AudioMoth bin is flashed");
+      Serial.println("AudioMoth STATUS lacks protocol v4 ACKed pipe fields; using 115200-baud GET fallback until the v4 AudioMoth bin is flashed");
     }
     bridgePipeStreamSupported = false;
   } else if (pipe != 1 || pipeBaud != MOTH_PIPE_FAST_BAUD || pipeBytes < SERVER_UPLOAD_CHUNK_BYTES ||
@@ -666,9 +508,9 @@ bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &recei
 
   if (requestedBytes == 0) requestedBytes = MOTH_TEST_STREAM_BYTES;
   if (requestedBytes > MOTH_TEST_STREAM_BYTES) requestedBytes = MOTH_TEST_STREAM_BYTES;
-  if (baud == 0) baud = MOTH_STREAM_FAST_BAUD;
+  if (baud == 0) baud = MOTH_STREAM_TEST_BAUD_3;
   if (baud == MOTH_UART_BAUD) return false;
-  if (bridgeCurrentBaud != MOTH_UART_BAUD || bridgeSessionBaudActive || bridgeFastBaudActive) {
+  if (bridgeCurrentBaud != MOTH_UART_BAUD) {
     return false;
   }
 
@@ -816,7 +658,7 @@ bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t request
   if (requestedBytes == 0) {
     return false;
   }
-  if (bridgeCurrentBaud != MOTH_UART_BAUD || bridgeSessionBaudActive || bridgeFastBaudActive) {
+  if (bridgeCurrentBaud != MOTH_UART_BAUD) {
     return false;
   }
 
@@ -1045,152 +887,6 @@ void bridgeStopPipeStream() {
 #endif
 }
 
-bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requestedBytes, uint8_t *dest, ChunkResult &result, bool &fatalOut) {
-  result.ok = false;
-  result.path = path;
-  result.offset = offset;
-  result.length = 0;
-  result.crc = 0;
-  result.sdReadMs = 0;
-  fatalOut = false;
-
-#if !MOTH_STREAM_FAST_ENABLED
-  return false;
-#endif
-
-  if (!bridgeFastStreamSupported || !dest || requestedBytes == 0 || requestedBytes > SERVER_UPLOAD_CHUNK_BYTES) {
-    return false;
-  }
-  if (bridgeCurrentBaud != MOTH_UART_BAUD || bridgeSessionBaudActive || bridgeFastBaudActive) {
-    return false;
-  }
-
-  if (!bridgeProbeDefaultControl("GETSTREAM preflight")) {
-    fatalOut = true;
-    return false;
-  }
-  bridgeDrainInputQuiet(25, 250);
-  bridgeSendLine("GETSTREAM " + path + " " + String(offset) + " " + String(requestedBytes) + " " + String(MOTH_STREAM_FAST_BAUD));
-
-  String line;
-  if (!bridgeReadExpectedLineIgnoringNoise("STREAM ", line, MOTH_DATA_HEADER_TIMEOUT_MS) || !line.startsWith("STREAM ")) {
-    if (line.startsWith("ERR CMD") || line.startsWith("ERR ARG")) {
-      Serial.printf("AudioMoth GETSTREAM is unavailable: %s\n", line.c_str());
-      bridgeFastStreamSupported = false;
-    } else if (line.length()) {
-      Serial.printf("GETSTREAM header failed at offset %lu: %s\n", (unsigned long)offset, line.c_str());
-    } else {
-      Serial.printf("GETSTREAM header timed out at offset %lu\n", (unsigned long)offset);
-    }
-    bridgeFlushInput();
-    return false;
-  }
-
-  char parsedPath[128] = {0};
-  unsigned long parsedOffset = 0;
-  unsigned long streamLength = 0;
-  unsigned int frameMax = 0;
-  unsigned long streamBaud = 0;
-  if (sscanf(line.c_str(), "STREAM %127s %lu %lu %u %lu", parsedPath, &parsedOffset, &streamLength, &frameMax, &streamBaud) != 5) {
-    Serial.printf("GETSTREAM malformed header: %s\n", line.c_str());
-    fatalOut = true;
-    return false;
-  }
-  if (String(parsedPath) != path || parsedOffset != offset || streamLength == 0 ||
-      streamLength > requestedBytes || frameMax == 0 || frameMax > MOTH_CHUNK_BYTES ||
-      streamBaud != MOTH_STREAM_FAST_BAUD) {
-    Serial.printf("GETSTREAM header mismatch: %s\n", line.c_str());
-    fatalOut = true;
-    return false;
-  }
-
-  MothSerial.updateBaudRate(MOTH_STREAM_FAST_BAUD);
-
-  static const uint8_t streamMagic[] = {0xA5, 0x5A, 0xD7, 0x7D};
-  uint32_t received = 0;
-  uint32_t combinedCrc = 0;
-  uint32_t totalSdReadMs = 0;
-  uint8_t frameHeader[14];
-
-  while (received < streamLength) {
-    if (!bridgeReadMagic(streamMagic, sizeof(streamMagic), MOTH_STREAM_FRAME_TIMEOUT_MS)) {
-      Serial.printf("GETSTREAM frame magic timeout at offset %lu received %lu/%lu\n",
-                    (unsigned long)offset, (unsigned long)received, (unsigned long)streamLength);
-      fatalOut = true;
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    if (!bridgeReadBytes(frameHeader, sizeof(frameHeader), MOTH_STREAM_FRAME_TIMEOUT_MS)) {
-      Serial.printf("GETSTREAM frame header timeout at offset %lu received %lu/%lu\n",
-                    (unsigned long)offset, (unsigned long)received, (unsigned long)streamLength);
-      fatalOut = true;
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    uint32_t frameOffset = bridgeReadUInt32LE(frameHeader);
-    uint16_t frameLength = bridgeReadUInt16LE(frameHeader + 4);
-    uint32_t frameCrc = bridgeReadUInt32LE(frameHeader + 6);
-    uint32_t frameSdMs = bridgeReadUInt32LE(frameHeader + 10);
-    uint32_t expectedOffset = offset + received;
-
-    if (frameOffset != expectedOffset || frameLength == 0 || frameLength > frameMax || received + frameLength > streamLength) {
-      Serial.printf("GETSTREAM frame metadata mismatch: frame_offset=%lu expected=%lu len=%u received=%lu total=%lu\n",
-                    (unsigned long)frameOffset, (unsigned long)expectedOffset, frameLength,
-                    (unsigned long)received, (unsigned long)streamLength);
-      fatalOut = true;
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    if (!bridgeReadBytes(dest + received, frameLength, MOTH_BINARY_TIMEOUT_MS)) {
-      Serial.printf("GETSTREAM payload timeout at offset %lu length %u\n",
-                    (unsigned long)frameOffset, frameLength);
-      fatalOut = true;
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    uint32_t localCrc = crc32Update(0, dest + received, frameLength);
-    if (localCrc != frameCrc) {
-      Serial.printf("GETSTREAM CRC mismatch at offset %lu: local=%08lX moth=%08lX\n",
-                    (unsigned long)frameOffset, (unsigned long)localCrc, (unsigned long)frameCrc);
-      fatalOut = true;
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    combinedCrc = crc32Update(combinedCrc, dest + received, frameLength);
-    totalSdReadMs += frameSdMs;
-    received += frameLength;
-  }
-
-  bridgeReturnToDefaultAfterStream();
-  String doneLine;
-  if (!bridgeReadExpectedLine("OK STREAM", doneLine, 150)) {
-    if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
-      Serial.printf("GETSTREAM completion error: %s\n", doneLine.c_str());
-      fatalOut = true;
-      return false;
-    }
-    Serial.printf("GETSTREAM completion not observed; validated %lu bytes by frame CRC\n",
-                  (unsigned long)received);
-  }
-  if (!bridgeProbeDefaultControl("GETSTREAM")) {
-    fatalOut = true;
-    return false;
-  }
-
-  result.path = path;
-  result.offset = offset;
-  result.length = received;
-  result.crc = combinedCrc;
-  result.sdReadMs = totalSdReadMs;
-  result.ok = true;
-  return true;
-}
-
 bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, ChunkResult &result) {
   result.ok = false;
   result.path = path;
@@ -1203,20 +899,16 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
 
   String line;
   bool gotHeader = false;
-  bool useFastPayload = bridgeFastBaudActive && !bridgeSessionBaudActive;
-  const char *headerPrefix = useFastPayload ? "FASTDATA " : "DATA ";
   for (uint8_t attempt = 1; attempt <= 3; attempt++) {
     bridgeDrainInputQuiet(25, 250);
-    String command = useFastPayload ? "GETFAST " : "GET ";
-    bridgeSendLine(command + path + " " + String(offset) + " " + String(maxBytes));
+    bridgeSendLine("GET " + path + " " + String(offset) + " " + String(maxBytes));
 
-    if (bridgeReadExpectedLineIgnoringNoise(headerPrefix, line, MOTH_DATA_HEADER_TIMEOUT_MS) && line.startsWith(headerPrefix)) {
+    if (bridgeReadExpectedLineIgnoringNoise("DATA ", line, MOTH_DATA_HEADER_TIMEOUT_MS) && line.startsWith("DATA ")) {
       gotHeader = true;
       break;
     }
 
-    Serial.printf("%s header attempt %u failed at offset %lu; last line='%s'\n",
-                  useFastPayload ? "GETFAST" : "GET",
+    Serial.printf("GET header attempt %u failed at offset %lu; last line='%s'\n",
                   attempt, (unsigned long)offset, line.c_str());
     if (line == "OK BRIDGE_SLEEP") break;
     delay(100);
@@ -1232,14 +924,11 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   unsigned long parsedOffset = 0;
   unsigned int parsedLength = 0;
   unsigned long parsedCrc = 0;
-  unsigned long payloadBaud = MOTH_UART_BAUD;
   unsigned long parsedSdReadMs = 0;
 
-  int matched = useFastPayload
-      ? sscanf(line.c_str(), "FASTDATA %127s %lu %u %lx %lu %lu", parsedPath, &parsedOffset, &parsedLength, &parsedCrc, &payloadBaud, &parsedSdReadMs)
-      : sscanf(line.c_str(), "DATA %127s %lu %u %lx %lu", parsedPath, &parsedOffset, &parsedLength, &parsedCrc, &parsedSdReadMs);
-  int expectedFields = useFastPayload ? 5 : 4;
-  if (matched < expectedFields) {
+  int matched = sscanf(line.c_str(), "DATA %127s %lu %u %lx %lu",
+                       parsedPath, &parsedOffset, &parsedLength, &parsedCrc, &parsedSdReadMs);
+  if (matched < 4) {
     Serial.printf("GET malformed DATA header at offset %lu: '%s'\n",
                   (unsigned long)offset, line.c_str());
     return false;
@@ -1260,42 +949,7 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
     return false;
   }
 
-  if (useFastPayload && payloadBaud != MOTH_UART_FAST_BAUD) {
-    Serial.printf("GETFAST baud mismatch: expected %u got %lu\n", MOTH_UART_FAST_BAUD, payloadBaud);
-    return false;
-  }
-
-  if (useFastPayload) {
-    MothSerial.updateBaudRate(MOTH_UART_FAST_BAUD);
-    bool magicFound = bridgeReadFastMagic(MOTH_FAST_MAGIC_TIMEOUT_MS);
-    bool payloadRead = magicFound && bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS);
-    MothSerial.updateBaudRate(MOTH_UART_BAUD);
-    bridgeCurrentBaud = MOTH_UART_BAUD;
-    delay(20);
-
-    if (!magicFound) {
-      Serial.printf("GETFAST preamble timeout at offset %lu\n", (unsigned long)offset);
-      bridgeFlushInput();
-      return false;
-    }
-    if (!payloadRead) {
-      Serial.printf("GETFAST binary timeout at offset %lu length %u\n",
-                    (unsigned long)offset, parsedLength);
-      bridgeFlushInput();
-      return false;
-    }
-
-    String doneLine;
-    if (!bridgeReadExpectedLine("OK FASTDATA", doneLine, 1000)) {
-      if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
-        Serial.printf("GETFAST completion error at offset %lu; got '%s'\n",
-                      (unsigned long)offset, doneLine.c_str());
-        return false;
-      }
-      Serial.printf("GETFAST completion not observed at offset %lu; validating payload by CRC\n",
-                    (unsigned long)offset);
-    }
-  } else if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS)) {
+  if (!bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS)) {
     Serial.printf("GET binary timeout at offset %lu length %u\n",
                   (unsigned long)offset, parsedLength);
     return false;
@@ -1327,9 +981,7 @@ void bridgeDone() {
 }
 
 void bridgeRestoreDefaultBaud() {
-  if (!bridgeFastBaudActive && !bridgeSessionBaudActive && bridgeCurrentBaud == MOTH_UART_BAUD) return;
-  bridgeFastBaudActive = false;
-  bridgeSessionBaudActive = false;
+  if (bridgeCurrentBaud == MOTH_UART_BAUD) return;
   bridgeRestartUart(MOTH_UART_BAUD, true);
 }
 

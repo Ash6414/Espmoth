@@ -37,11 +37,6 @@ bool openBridgeSession(long serverEpoch) {
     return false;
   }
 
-  if (!bridgeEnableFastBaud()) {
-    mothRequest(false);
-    return false;
-  }
-
   uint32_t epoch = bridgeEpochNow(serverEpoch);
   if (epoch > 1700000000UL) {
     bridgeSetTime(epoch, 0);
@@ -327,7 +322,6 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
   uint32_t serverTransferMs = 0;
   uint32_t sdReadMs = 0;
   uint32_t serverProcessMs = 0;
-  uint32_t uartChunkBytes = bridgeTransferChunkBytes();
 
 #if MOTH_PIPE_FAST_ENABLED
   if (offset < file.size) {
@@ -411,44 +405,24 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
     uint32_t batchBytes = remaining > session.chunkSize ? session.chunkSize : remaining;
     uint32_t filled = 0;
 
-    ChunkResult stream;
-    bool streamFatal = false;
-    uint32_t streamStartMs = millis();
-    bool gotStream = bridgeGetStreamBlock(file.path, offset, batchBytes, serverChunk, stream, streamFatal);
-    uint32_t streamMs = millis() - streamStartMs;
-    if (gotStream && stream.ok && stream.offset == offset && stream.length == batchBytes) {
-      uartTransferMs += streamMs;
-      sdReadMs += stream.sdReadMs;
-      filled = batchBytes;
-      Serial.printf("GETSTREAM %lu bytes at offset %lu in %lu ms\n",
-                    (unsigned long)batchBytes, (unsigned long)offset, (unsigned long)streamMs);
-    } else {
-      uartTransferMs += streamMs;
-      if (streamFatal) {
-        Serial.printf("GETSTREAM failed fatally at offset %lu\n", (unsigned long)offset);
+    while (filled < batchBytes) {
+      uint32_t uartRemaining = batchBytes - filled;
+      uint32_t requestBytes = uartRemaining > MOTH_CHUNK_BYTES ? MOTH_CHUNK_BYTES : uartRemaining;
+      uint32_t uartOffset = offset + filled;
+
+      ChunkResult chunk;
+      uint32_t uartStartMs = millis();
+      bool gotChunk = bridgeGetChunk(file.path, uartOffset, requestBytes, chunk);
+      uartTransferMs += millis() - uartStartMs;
+      if (!gotChunk || !chunk.ok || chunk.offset != uartOffset || chunk.length == 0 || chunk.length != requestBytes) {
+        Serial.printf("GET failed at offset %lu\n", (unsigned long)uartOffset);
         bridgeFailure = true;
         return false;
       }
 
-      while (filled < batchBytes) {
-        uint32_t uartRemaining = batchBytes - filled;
-        uint32_t requestBytes = uartRemaining > uartChunkBytes ? uartChunkBytes : uartRemaining;
-        uint32_t uartOffset = offset + filled;
-
-        ChunkResult chunk;
-        uint32_t uartStartMs = millis();
-        bool gotChunk = bridgeGetChunk(file.path, uartOffset, requestBytes, chunk);
-        uartTransferMs += millis() - uartStartMs;
-        if (!gotChunk || !chunk.ok || chunk.offset != uartOffset || chunk.length == 0 || chunk.length != requestBytes) {
-          Serial.printf("GET failed at offset %lu\n", (unsigned long)uartOffset);
-          bridgeFailure = true;
-          return false;
-        }
-
-        memcpy(serverChunk + filled, mothChunk, chunk.length);
-        sdReadMs += chunk.sdReadMs;
-        filled += chunk.length;
-      }
+      memcpy(serverChunk + filled, mothChunk, chunk.length);
+      sdReadMs += chunk.sdReadMs;
+      filled += chunk.length;
     }
 
     uint32_t serverStartMs = millis();

@@ -127,7 +127,6 @@ try {
 }
 
 $lines | Set-Content -LiteralPath $logPath -Encoding UTF8
-$baudLine = $lines | Where-Object { $_ -like "AudioMoth fast payload mode armed at*" } | Select-Object -Last 1
 $pipeLines = $lines | Where-Object { $_ -like "GETPIPE * bytes at offset *" }
 $pipeStatusMissing = $lines | Where-Object {
   $_ -like "AudioMoth STATUS lacks pipe capability fields*" -or
@@ -140,15 +139,7 @@ $pipeFatal = $lines | Where-Object {
   $_ -like "GETPIPE CRC mismatch*" -or
   $_ -like "GETPIPE *mismatch*"
 } | Select-Object -First 1
-$streamLines = $lines | Where-Object { $_ -like "GETSTREAM * bytes at offset *" }
-$streamStatusMissing = $lines | Where-Object { $_ -like "AudioMoth STATUS lacks stream capability fields*" } | Select-Object -First 1
-$streamUnavailable = $lines | Where-Object { $_ -like "AudioMoth GETSTREAM is unavailable*" } | Select-Object -First 1
-$streamFatal = $lines | Where-Object {
-  $_ -like "GETSTREAM failed fatally*" -or
-  $_ -like "GETSTREAM *timeout*" -or
-  $_ -like "GETSTREAM CRC mismatch*" -or
-  $_ -like "GETSTREAM *control resync failed*"
-} | Select-Object -First 1
+$getLines = $lines | Where-Object { $_ -like "GET failed at offset *" }
 $results = $lines | Where-Object { $_ -like "Completed *end_to_end=*" }
 $listFailure = $lines | Where-Object { $_ -like "AudioMoth LIST *" } | Select-Object -Last 1
 
@@ -163,7 +154,7 @@ if ($pipeLines.Count -gt 0) {
   }
   Write-Host ("GETPIPE used: {0} piped block(s), {1:N0} bytes" -f $pipeLines.Count, $pipeBytes)
 } elseif ($pipeUnavailable) {
-  Write-Host "GETPIPE unavailable; benchmark used the older stream/fallback path."
+  Write-Host "GETPIPE unavailable; benchmark used the 115200-baud GET fallback path."
   Write-Host $pipeUnavailable
 } elseif ($pipeStatusMissing) {
   Write-Host "GETPIPE was skipped because the AudioMoth STATUS line lacks protocol v4 ACKed pipe capability fields."
@@ -172,29 +163,9 @@ if ($pipeLines.Count -gt 0) {
 } elseif ($pipeFatal) {
   Write-Host "GETPIPE failed before completion:"
   Write-Host $pipeFatal
-} elseif ($streamLines.Count -gt 0) {
-  $streamBytes = 0L
-  foreach ($line in $streamLines) {
-    if ($line -match "GETSTREAM ([0-9]+) bytes") {
-      $streamBytes += [int64]$Matches[1]
-    }
-  }
-  Write-Host ("GETSTREAM used: {0} streamed block(s), {1:N0} bytes" -f $streamLines.Count, $streamBytes)
-} elseif ($streamUnavailable) {
-  Write-Host "GETSTREAM unavailable; benchmark used the 115200-baud fallback path."
-  Write-Host $streamUnavailable
-  if ($streamUnavailable -like "*unsupported_baud*") {
-    Write-Host "AudioMoth firmware does not support the ESP's requested stream baud. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
-  }
-} elseif ($streamStatusMissing) {
-  Write-Host "GETSTREAM was skipped because the AudioMoth STATUS line lacks stream capability fields."
-  Write-Host $streamStatusMissing
-  Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
-} elseif ($streamFatal) {
-  Write-Host "GETSTREAM failed before completion:"
-  Write-Host $streamFatal
-} elseif ($baudLine) {
-  Write-Host $baudLine
+} elseif ($getLines.Count -gt 0) {
+  Write-Host "115200-baud GET fallback failed before completion:"
+  Write-Host ($getLines | Select-Object -First 1)
 } else {
   Write-Host "No fast UART mode was observed."
 }
@@ -202,13 +173,13 @@ if ($results) {
   $results | ForEach-Object { Write-Host $_ }
   exit 0
 }
-if ($streamFatal) {
-  Write-Host "First GETSTREAM failure:"
-  Write-Host $streamFatal
-}
 if ($pipeFatal) {
   Write-Host "First GETPIPE failure:"
   Write-Host $pipeFatal
+}
+if ($getLines.Count -gt 0) {
+  Write-Host "First GET fallback failure:"
+  Write-Host ($getLines | Select-Object -First 1)
 }
 if ($listFailure) { Write-Host $listFailure }
 Write-Host "No completed file transfer was measured. Ensure the AudioMoth SD card contains a file not already uploaded."

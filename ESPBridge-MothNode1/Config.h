@@ -90,18 +90,6 @@
 // AudioMoth bridge protocol
 // ----------------------------
 #define MOTH_UART_BAUD               115200
-// Whole-session high-baud mode keeps commands and DATA payloads at one faster
-// baud after a proven BAUD/PING handshake. Failed probes reopen at 115200.
-#define MOTH_SESSION_FAST_ENABLED    0
-#define MOTH_SESSION_FAST_BAUD       230400
-#define MOTH_SESSION_RETRY_BAUD_1    460800
-#define MOTH_SESSION_RETRY_BAUD_2    921600
-#define MOTH_SESSION_RESET_MS        4500
-// Preferred fast path: one 115200 command starts a one-way AudioMoth->ESP32
-// stream at the fastest measured command-stable baud. ESP-to-AudioMoth commands
-// remain at 115200.
-#define MOTH_STREAM_FAST_ENABLED     0
-#define MOTH_STREAM_FAST_BAUD        115200
 // Production fast path: one 115200 GETPIPE command keeps the AudioMoth SD file
 // open and sends repeated 921600-baud blocks. Each UART frame is ACKed at the
 // fast baud after CRC validation; the ESP returns to 115200 for NEXT only after
@@ -115,20 +103,14 @@
 #define MOTH_STREAM_FRAME_TIMEOUT_MS 4000
 #define MOTH_TEST_STREAM_BYTES       1048576
 #define MOTH_UART_RX_BUFFER_BYTES    32768
-// Per-payload GETFAST is kept off in the field build; whole-session high baud
-// is simpler to recover from and falls back cleanly to 115200.
-#define MOTH_UART_FAST_BAUD          115200
 #define MOTH_READY_TIMEOUT_MS        65000
 #define MOTH_LINE_TIMEOUT_MS         6000
 #define MOTH_LIST_TIMEOUT_MS         60000
 #define MOTH_DATA_HEADER_TIMEOUT_MS  6000
 #define MOTH_BINARY_TIMEOUT_MS       8000
-#define MOTH_FAST_MAGIC_TIMEOUT_MS   1500
-#define MOTH_FAST_DONE_TIMEOUT_MS    3000
 #define MOTH_BUSY_WAIT_MS            5000
 #define MOTH_ASSERT_REQ_AT_BOOT      true
 #define MOTH_MAX_FILES_PER_SESSION   16
-#define MOTH_LEGACY_CHUNK_BYTES      2048
 #define MOTH_CHUNK_BYTES             2048
 #define SERVER_UPLOAD_CHUNK_BYTES    131072
 #define MOTH_UPLOAD_WINDOW_WAIT_MS   120000

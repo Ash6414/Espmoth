@@ -109,8 +109,6 @@ bool mothBusy();
 void mothRequest(bool state);
 bool bridgeWaitReady(uint32_t timeoutMs);
 bool bridgePing();
-bool bridgeEnableFastBaud();
-uint32_t bridgeTransferChunkBytes();
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds);
 bool bridgeStatus(String &statusOut);
 void bridgeApplyStatusCapabilities(const String &status);
@@ -120,7 +118,6 @@ bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t request
 bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, bool &doneOut, bool &fatalOut);
 bool bridgeContinuePipeStream(const PipeSession &pipe);
 void bridgeStopPipeStream();
-bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requestedBytes, uint8_t *dest, ChunkResult &result, bool &fatalOut);
 bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, ChunkResult &result);
 bool bridgeDelete(const String &path);
 void bridgeDone();
