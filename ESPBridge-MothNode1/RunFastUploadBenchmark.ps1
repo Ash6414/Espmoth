@@ -184,7 +184,7 @@ if ($pipeLines.Count -gt 0) {
     Write-Host "AudioMoth firmware does not support the ESP's requested stream baud. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
   }
 } elseif ($streamStatusMissing) {
-  Write-Host "GETSTREAM was skipped because the AudioMoth STATUS line lacks protocol v2 stream capability fields."
+  Write-Host "GETSTREAM was skipped because the AudioMoth STATUS line lacks protocol v2/v3 stream capability fields."
   Write-Host $streamStatusMissing
   Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
 } elseif ($streamFatal) {

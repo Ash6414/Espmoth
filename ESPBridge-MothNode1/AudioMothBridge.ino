@@ -462,7 +462,7 @@ void bridgeApplyStatusCapabilities(const String &status) {
 
   if (!hasStream || !hasStreamBaud || !hasStreamBytes) {
     if (bridgeFastStreamSupported) {
-      Serial.println("AudioMoth STATUS lacks stream capability fields; using legacy GET until the protocol v2 AudioMoth bin is flashed");
+      Serial.println("AudioMoth STATUS lacks stream capability fields; using legacy GET until a protocol v2/v3 AudioMoth bin is flashed");
     }
     bridgeFastStreamSupported = false;
   } else if (stream != 1 || streamBaud != MOTH_STREAM_FAST_BAUD || streamBytes < SERVER_UPLOAD_CHUNK_BYTES) {

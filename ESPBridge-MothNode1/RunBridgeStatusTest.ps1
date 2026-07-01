@@ -216,8 +216,44 @@ if ($lines.Count -eq 0) {
 
 $lines | Set-Content -LiteralPath $logPath -Encoding UTF8
 
+$responseMessage = $null
+if ($ackSeen) {
+  $responseScript = @"
+import json
+import sqlite3
+import sys
+
+db_path = sys.argv[1]
+command_id = int(sys.argv[2])
+conn = sqlite3.connect(db_path, timeout=10)
+row = conn.execute("SELECT response_json FROM commands WHERE id=?", (command_id,)).fetchone()
+conn.close()
+if row and row[0]:
+    payload = json.loads(row[0])
+    print(payload.get("message", ""))
+"@
+  try {
+    $responseMessage = ($responseScript | & $pythonPath - $dbPath $commandId).Trim()
+  } catch {
+    $responseMessage = $null
+  }
+}
+
 Write-Host ""
 Write-Host "Bridge test result: $result"
+if ($responseMessage) {
+  Write-Host "AudioMoth response: $responseMessage"
+  if ($CommandType -eq "MOTH_STATUS" -and $responseMessage -like "OK STATUS*") {
+    if ($responseMessage -like "*proto=3*" -and
+        $responseMessage -like "*pipe=1*" -and
+        $responseMessage -like "*pipe_baud=230400*" -and
+        $responseMessage -like "*pipe_bytes=65536*") {
+      Write-Host "AudioMoth protocol v3 pipe capability: OK"
+    } else {
+      Write-Host "AudioMoth protocol v3 pipe capability: MISSING - flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
+    }
+  }
+}
 
 switch ($result) {
   "PASS" {
