@@ -152,6 +152,9 @@ if ($streamLines.Count -gt 0) {
 } elseif ($streamUnavailable) {
   Write-Host "GETSTREAM unavailable; benchmark used the 115200-baud fallback path."
   Write-Host $streamUnavailable
+  if ($streamUnavailable -like "*unsupported_baud*") {
+    Write-Host "AudioMoth firmware does not support the ESP's requested stream baud. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
+  }
 } elseif ($streamFatal) {
   Write-Host "GETSTREAM failed before completion:"
   Write-Host $streamFatal
