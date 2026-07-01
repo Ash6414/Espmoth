@@ -128,6 +128,15 @@ try {
 
 $lines | Set-Content -LiteralPath $logPath -Encoding UTF8
 $baudLine = $lines | Where-Object { $_ -like "AudioMoth fast payload mode armed at*" } | Select-Object -Last 1
+$pipeLines = $lines | Where-Object { $_ -like "GETPIPE * bytes at offset *" }
+$pipeStatusMissing = $lines | Where-Object { $_ -like "AudioMoth STATUS lacks pipe capability fields*" } | Select-Object -First 1
+$pipeUnavailable = $lines | Where-Object { $_ -like "AudioMoth GETPIPE is unavailable*" } | Select-Object -First 1
+$pipeFatal = $lines | Where-Object {
+  $_ -like "GETPIPE failed*" -or
+  $_ -like "GETPIPE *timeout*" -or
+  $_ -like "GETPIPE CRC mismatch*" -or
+  $_ -like "GETPIPE *mismatch*"
+} | Select-Object -First 1
 $streamLines = $lines | Where-Object { $_ -like "GETSTREAM * bytes at offset *" }
 $streamStatusMissing = $lines | Where-Object { $_ -like "AudioMoth STATUS lacks stream capability fields*" } | Select-Object -First 1
 $streamUnavailable = $lines | Where-Object { $_ -like "AudioMoth GETSTREAM is unavailable*" } | Select-Object -First 1
@@ -142,7 +151,25 @@ $listFailure = $lines | Where-Object { $_ -like "AudioMoth LIST *" } | Select-Ob
 
 Write-Host ""
 Write-Host "=== Fast upload benchmark ==="
-if ($streamLines.Count -gt 0) {
+if ($pipeLines.Count -gt 0) {
+  $pipeBytes = 0L
+  foreach ($line in $pipeLines) {
+    if ($line -match "GETPIPE ([0-9]+) bytes") {
+      $pipeBytes += [int64]$Matches[1]
+    }
+  }
+  Write-Host ("GETPIPE used: {0} piped block(s), {1:N0} bytes" -f $pipeLines.Count, $pipeBytes)
+} elseif ($pipeUnavailable) {
+  Write-Host "GETPIPE unavailable; benchmark used the older stream/fallback path."
+  Write-Host $pipeUnavailable
+} elseif ($pipeStatusMissing) {
+  Write-Host "GETPIPE was skipped because the AudioMoth STATUS line lacks protocol v3 pipe capability fields."
+  Write-Host $pipeStatusMissing
+  Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
+} elseif ($pipeFatal) {
+  Write-Host "GETPIPE failed before completion:"
+  Write-Host $pipeFatal
+} elseif ($streamLines.Count -gt 0) {
   $streamBytes = 0L
   foreach ($line in $streamLines) {
     if ($line -match "GETSTREAM ([0-9]+) bytes") {
@@ -175,6 +202,10 @@ if ($results) {
 if ($streamFatal) {
   Write-Host "First GETSTREAM failure:"
   Write-Host $streamFatal
+}
+if ($pipeFatal) {
+  Write-Host "First GETPIPE failure:"
+  Write-Host $pipeFatal
 }
 if ($listFailure) { Write-Host $listFailure }
 Write-Host "No completed file transfer was measured. Ensure the AudioMoth SD card contains a file not already uploaded."

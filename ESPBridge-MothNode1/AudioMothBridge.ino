@@ -22,6 +22,7 @@ uint32_t bridgeCurrentBaud = MOTH_UART_BAUD;
 uint32_t bridgeRejectedSessionBauds[3] = {0, 0, 0};
 uint8_t bridgeRejectedSessionBaudCount = 0;
 bool bridgeFastStreamSupported = true;
+bool bridgePipeStreamSupported = true;
 
 void bridgeResetStats() {
   bridgeRawBytesRead = 0;
@@ -464,18 +465,37 @@ void bridgeApplyStatusCapabilities(const String &status) {
       Serial.println("AudioMoth STATUS lacks stream capability fields; using legacy GET until the protocol v2 AudioMoth bin is flashed");
     }
     bridgeFastStreamSupported = false;
-    return;
-  }
-
-  if (stream != 1 || streamBaud != MOTH_STREAM_FAST_BAUD || streamBytes < SERVER_UPLOAD_CHUNK_BYTES) {
+  } else if (stream != 1 || streamBaud != MOTH_STREAM_FAST_BAUD || streamBytes < SERVER_UPLOAD_CHUNK_BYTES) {
     Serial.printf("AudioMoth stream capability mismatch: stream=%lu stream_baud=%lu stream_bytes=%lu expected_baud=%u expected_bytes=%u\n",
                   stream, streamBaud, streamBytes, MOTH_STREAM_FAST_BAUD, SERVER_UPLOAD_CHUNK_BYTES);
     bridgeFastStreamSupported = false;
-    return;
+  } else {
+    bridgeFastStreamSupported = true;
+    Serial.printf("AudioMoth stream capability OK: baud=%lu bytes=%lu\n", streamBaud, streamBytes);
   }
+#endif
 
-  bridgeFastStreamSupported = true;
-  Serial.printf("AudioMoth stream capability OK: baud=%lu bytes=%lu\n", streamBaud, streamBytes);
+#if MOTH_PIPE_FAST_ENABLED
+  unsigned long pipe = 0;
+  unsigned long pipeBaud = 0;
+  unsigned long pipeBytes = 0;
+  bool hasPipe = bridgeStatusFieldUInt(status, "pipe", pipe);
+  bool hasPipeBaud = bridgeStatusFieldUInt(status, "pipe_baud", pipeBaud);
+  bool hasPipeBytes = bridgeStatusFieldUInt(status, "pipe_bytes", pipeBytes);
+
+  if (!hasPipe || !hasPipeBaud || !hasPipeBytes) {
+    if (bridgePipeStreamSupported) {
+      Serial.println("AudioMoth STATUS lacks pipe capability fields; using GETSTREAM/GET until the protocol v3 AudioMoth bin is flashed");
+    }
+    bridgePipeStreamSupported = false;
+  } else if (pipe != 1 || pipeBaud != MOTH_PIPE_FAST_BAUD || pipeBytes < SERVER_UPLOAD_CHUNK_BYTES) {
+    Serial.printf("AudioMoth pipe capability mismatch: pipe=%lu pipe_baud=%lu pipe_bytes=%lu expected_baud=%u expected_bytes=%u\n",
+                  pipe, pipeBaud, pipeBytes, MOTH_PIPE_FAST_BAUD, SERVER_UPLOAD_CHUNK_BYTES);
+    bridgePipeStreamSupported = false;
+  } else {
+    bridgePipeStreamSupported = true;
+    Serial.printf("AudioMoth pipe capability OK: baud=%lu bytes=%lu\n", pipeBaud, pipeBytes);
+  }
 #endif
 }
 
@@ -762,6 +782,245 @@ bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &recei
   receivedOut = received;
   crcOut = combinedCrc;
   return received == streamLength;
+}
+
+bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t requestedBytes, PipeSession &pipe, bool &unsupportedOut) {
+  pipe.active = false;
+  pipe.path = path;
+  pipe.startOffset = offset;
+  pipe.totalBytes = 0;
+  pipe.receivedBytes = 0;
+  pipe.blockMaxBytes = 0;
+  pipe.frameMaxBytes = 0;
+  pipe.baud = 0;
+  unsupportedOut = false;
+
+#if !MOTH_PIPE_FAST_ENABLED
+  return false;
+#endif
+
+  if (!bridgePipeStreamSupported) {
+    unsupportedOut = true;
+    return false;
+  }
+  if (requestedBytes == 0) {
+    return false;
+  }
+  if (bridgeCurrentBaud != MOTH_UART_BAUD || bridgeSessionBaudActive || bridgeFastBaudActive) {
+    return false;
+  }
+
+  bridgeDrainInputQuiet(25, 250);
+  bridgeSendLine("GETPIPE " + path + " " + String(offset) + " " + String(requestedBytes) + " " + String(MOTH_PIPE_FAST_BAUD));
+
+  String line;
+  if (!bridgeReadExpectedLineIgnoringNoise("PIPE ", line, MOTH_DATA_HEADER_TIMEOUT_MS) || !line.startsWith("PIPE ")) {
+    if (line.startsWith("ERR CMD") || line.startsWith("ERR ARG")) {
+      Serial.printf("AudioMoth GETPIPE is unavailable: %s\n", line.c_str());
+      bridgePipeStreamSupported = false;
+      unsupportedOut = true;
+    } else if (line.length()) {
+      Serial.printf("GETPIPE header failed at offset %lu: %s\n", (unsigned long)offset, line.c_str());
+    } else {
+      Serial.printf("GETPIPE header timed out at offset %lu\n", (unsigned long)offset);
+    }
+    bridgeFlushInput();
+    return false;
+  }
+
+  char parsedPath[128] = {0};
+  unsigned long parsedOffset = 0;
+  unsigned long totalBytes = 0;
+  unsigned long blockMax = 0;
+  unsigned int frameMax = 0;
+  unsigned long pipeBaud = 0;
+  if (sscanf(line.c_str(), "PIPE %127s %lu %lu %lu %u %lu",
+             parsedPath, &parsedOffset, &totalBytes, &blockMax, &frameMax, &pipeBaud) != 6) {
+    Serial.printf("GETPIPE malformed header: %s\n", line.c_str());
+    return false;
+  }
+  if (String(parsedPath) != path || parsedOffset != offset || totalBytes == 0 ||
+      totalBytes > requestedBytes || blockMax == 0 || blockMax > SERVER_UPLOAD_CHUNK_BYTES ||
+      frameMax == 0 || frameMax > MOTH_CHUNK_BYTES || pipeBaud != MOTH_PIPE_FAST_BAUD) {
+    Serial.printf("GETPIPE header mismatch: %s\n", line.c_str());
+    return false;
+  }
+
+  pipe.active = true;
+  pipe.path = path;
+  pipe.startOffset = (uint32_t)parsedOffset;
+  pipe.totalBytes = (uint32_t)totalBytes;
+  pipe.receivedBytes = 0;
+  pipe.blockMaxBytes = (uint32_t)blockMax;
+  pipe.frameMaxBytes = (uint32_t)frameMax;
+  pipe.baud = (uint32_t)pipeBaud;
+  Serial.printf("GETPIPE started for %s at %lu: total=%lu block=%lu frame=%lu baud=%lu\n",
+                path.c_str(),
+                (unsigned long)pipe.startOffset,
+                (unsigned long)pipe.totalBytes,
+                (unsigned long)pipe.blockMaxBytes,
+                (unsigned long)pipe.frameMaxBytes,
+                (unsigned long)pipe.baud);
+  return true;
+}
+
+bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, bool &doneOut, bool &fatalOut) {
+  result.ok = false;
+  result.path = pipe.path;
+  result.offset = pipe.startOffset + pipe.receivedBytes;
+  result.length = 0;
+  result.crc = 0;
+  result.sdReadMs = 0;
+  doneOut = false;
+  fatalOut = false;
+
+#if !MOTH_PIPE_FAST_ENABLED
+  return false;
+#endif
+
+  if (!pipe.active || !dest || pipe.receivedBytes >= pipe.totalBytes ||
+      pipe.blockMaxBytes == 0 || pipe.blockMaxBytes > SERVER_UPLOAD_CHUNK_BYTES ||
+      pipe.frameMaxBytes == 0 || pipe.frameMaxBytes > MOTH_CHUNK_BYTES ||
+      pipe.baud != MOTH_PIPE_FAST_BAUD) {
+    return false;
+  }
+
+  uint32_t blockOffset = pipe.startOffset + pipe.receivedBytes;
+  uint32_t remaining = pipe.totalBytes - pipe.receivedBytes;
+  uint32_t blockTarget = remaining > pipe.blockMaxBytes ? pipe.blockMaxBytes : remaining;
+
+  MothSerial.updateBaudRate(pipe.baud);
+  bridgeCurrentBaud = pipe.baud;
+
+  static const uint8_t streamMagic[] = {0xA5, 0x5A, 0xD7, 0x7D};
+  uint8_t frameHeader[14];
+  uint32_t received = 0;
+  uint32_t combinedCrc = 0;
+  uint32_t totalSdReadMs = 0;
+
+  while (received < blockTarget) {
+    if (!bridgeReadMagic(streamMagic, sizeof(streamMagic), MOTH_STREAM_FRAME_TIMEOUT_MS)) {
+      Serial.printf("GETPIPE frame magic timeout at offset %lu received %lu/%lu\n",
+                    (unsigned long)blockOffset, (unsigned long)received, (unsigned long)blockTarget);
+      fatalOut = true;
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    if (!bridgeReadBytes(frameHeader, sizeof(frameHeader), MOTH_STREAM_FRAME_TIMEOUT_MS)) {
+      Serial.printf("GETPIPE frame header timeout at offset %lu received %lu/%lu\n",
+                    (unsigned long)blockOffset, (unsigned long)received, (unsigned long)blockTarget);
+      fatalOut = true;
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    uint32_t frameOffset = bridgeReadUInt32LE(frameHeader);
+    uint16_t frameLength = bridgeReadUInt16LE(frameHeader + 4);
+    uint32_t frameCrc = bridgeReadUInt32LE(frameHeader + 6);
+    uint32_t frameSdMs = bridgeReadUInt32LE(frameHeader + 10);
+    uint32_t expectedOffset = blockOffset + received;
+
+    if (frameOffset != expectedOffset || frameLength == 0 || frameLength > pipe.frameMaxBytes || received + frameLength > blockTarget) {
+      Serial.printf("GETPIPE frame metadata mismatch: frame_offset=%lu expected=%lu len=%u received=%lu total=%lu\n",
+                    (unsigned long)frameOffset, (unsigned long)expectedOffset, frameLength,
+                    (unsigned long)received, (unsigned long)blockTarget);
+      fatalOut = true;
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    if (!bridgeReadBytes(dest + received, frameLength, MOTH_BINARY_TIMEOUT_MS)) {
+      Serial.printf("GETPIPE payload timeout at offset %lu length %u\n",
+                    (unsigned long)frameOffset, frameLength);
+      fatalOut = true;
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    uint32_t localCrc = crc32Update(0, dest + received, frameLength);
+    if (localCrc != frameCrc) {
+      Serial.printf("GETPIPE CRC mismatch at offset %lu: local=%08lX moth=%08lX\n",
+                    (unsigned long)frameOffset, (unsigned long)localCrc, (unsigned long)frameCrc);
+      fatalOut = true;
+      bridgeRestartUart(MOTH_UART_BAUD, true);
+      return false;
+    }
+
+    combinedCrc = crc32Update(combinedCrc, dest + received, frameLength);
+    totalSdReadMs += frameSdMs;
+    received += frameLength;
+  }
+
+  bridgeReturnToDefaultAfterStream();
+
+  String blockLine;
+  if (!bridgeReadExpectedLine("OK PIPEBLOCK", blockLine, 2500)) {
+    if (blockLine.startsWith("ERR") || blockLine == "OK BRIDGE_SLEEP") {
+      Serial.printf("GETPIPE block completion error: %s\n", blockLine.c_str());
+      fatalOut = true;
+      return false;
+    }
+    Serial.printf("GETPIPE block completion not observed at offset %lu\n", (unsigned long)blockOffset);
+    fatalOut = true;
+    return false;
+  }
+
+  char parsedPath[128] = {0};
+  unsigned long parsedOffset = 0;
+  unsigned long parsedLength = 0;
+  if (sscanf(blockLine.c_str(), "OK PIPEBLOCK %127s %lu %lu", parsedPath, &parsedOffset, &parsedLength) != 3 ||
+      String(parsedPath) != pipe.path || parsedOffset != blockOffset || parsedLength != received) {
+    Serial.printf("GETPIPE block completion mismatch: %s\n", blockLine.c_str());
+    fatalOut = true;
+    return false;
+  }
+
+  pipe.receivedBytes += received;
+  result.path = pipe.path;
+  result.offset = blockOffset;
+  result.length = received;
+  result.crc = combinedCrc;
+  result.sdReadMs = totalSdReadMs;
+  result.ok = true;
+
+  if (pipe.receivedBytes >= pipe.totalBytes) {
+    String doneLine;
+    if (!bridgeReadExpectedLine("OK PIPEDONE", doneLine, 2500)) {
+      if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
+        Serial.printf("GETPIPE done error: %s\n", doneLine.c_str());
+        fatalOut = true;
+        return false;
+      }
+      Serial.printf("GETPIPE done line not observed; validated %lu bytes by frame CRC\n",
+                    (unsigned long)pipe.receivedBytes);
+    }
+    pipe.active = false;
+    doneOut = true;
+  }
+
+  return true;
+}
+
+bool bridgeContinuePipeStream(const PipeSession &pipe) {
+#if !MOTH_PIPE_FAST_ENABLED
+  return false;
+#endif
+  if (!pipe.active || pipe.receivedBytes >= pipe.totalBytes) return false;
+  uint32_t nextOffset = pipe.startOffset + pipe.receivedBytes;
+  bridgeSendLine("NEXT " + String(nextOffset));
+  return true;
+}
+
+void bridgeStopPipeStream() {
+#if MOTH_PIPE_FAST_ENABLED
+  if (bridgeCurrentBaud != MOTH_UART_BAUD) {
+    bridgeRestartUart(MOTH_UART_BAUD, true);
+  }
+  bridgeSendLine("STOP");
+  String line;
+  bridgeReadExpectedLine("OK PIPESTOP", line, 500);
+#endif
 }
 
 bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requestedBytes, uint8_t *dest, ChunkResult &result, bool &fatalOut) {

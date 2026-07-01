@@ -150,27 +150,28 @@ When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD tota
 The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
 interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
 PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
-ESP first tries `GETSTREAM`: one 115200-baud command starts a one-way
-115200-baud AudioMoth-to-ESP stream of up to 64 KiB, framed as
-CRC32-checked 8 KiB pieces.
-The ESP writes the validated stream directly into the 64 KiB HTTPS PUT buffer.
-Before each stream request, the ESP verifies control with `PING`, logs whether
-a failed probe saw sleep, silence, or an error line, then drains idle chatter
-immediately before sending the next `GETSTREAM` header.
+ESP first tries `GETPIPE`: one 115200-baud command opens the SD file once, then
+AudioMoth sends repeated 230400-baud blocks of up to 64 KiB, framed as
+CRC32-checked 8 KiB pieces. After each validated block, AudioMoth returns to
+115200 and waits inside the same command for `NEXT <offset>`; the ESP only sends
+`NEXT` after the server accepts the previous PUT. This keeps the fragile
+ESP-to-AudioMoth direction slow while moving payload bytes faster and avoiding
+per-block file reopen/command overhead.
 For bench testing without a recording on the SD card, `MOTH_TEST_STREAM` asks
 AudioMoth to send a deterministic 1 MiB max stream. The diagnostic probes
 921600 first, then falls back to 460800 and 230400, reporting the highest
 CRC-checked command-stable rate.
 
-If `GETSTREAM` is unavailable, the ESP falls back to the proven 115200-baud
-`GET` path with 4 KiB UART reads aggregated into 64 KiB server PUT requests.
+If `GETPIPE` is unavailable, the ESP falls back to `GETSTREAM`, then to the
+proven 115200-baud `GET` path with 4 KiB UART reads aggregated into 64 KiB
+server PUT requests.
 Live tests showed that 128 KiB could not allocate and 96 KiB starved the HTTPS
 client. Whole-session high baud remains disabled because bench testing showed
 ESP-to-AudioMoth commands were not reliable above 115200. Per-block high-baud
 payload switching also moved one block and then lost command control on the
-current 4-inch 30 AWG wiring, so production upload now keeps the UART at 115200
-and gains speed by reducing command/file-open overhead. The ESP USB debug
-console continues to use 115200 baud.
+current 4-inch 30 AWG wiring, so production upload now uses slow control plus
+fast one-way payload blocks. The ESP USB debug console continues to use 115200
+baud.
 
 ## Command types supported
 

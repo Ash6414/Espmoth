@@ -29,6 +29,17 @@ struct ChunkResult {
   uint32_t sdReadMs;
 };
 
+struct PipeSession {
+  bool active;
+  String path;
+  uint32_t startOffset;
+  uint32_t totalBytes;
+  uint32_t receivedBytes;
+  uint32_t blockMaxBytes;
+  uint32_t frameMaxBytes;
+  uint32_t baud;
+};
+
 enum UploadResultCode {
   UPLOAD_NOT_ATTEMPTED = 0,
   UPLOAD_SUCCESS = 1,

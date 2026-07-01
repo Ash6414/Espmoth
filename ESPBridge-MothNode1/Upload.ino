@@ -328,6 +328,84 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
   uint32_t sdReadMs = 0;
   uint32_t serverProcessMs = 0;
   uint32_t uartChunkBytes = bridgeTransferChunkBytes();
+
+#if MOTH_PIPE_FAST_ENABLED
+  if (offset < file.size) {
+    PipeSession pipe;
+    bool pipeUnsupported = false;
+    bool pipeStarted = bridgeStartPipeStream(file.path, offset, file.size - offset, pipe, pipeUnsupported);
+    if (pipeStarted) {
+      Serial.printf("GETPIPE transferring %lu bytes from offset %lu at %lu baud\n",
+                    (unsigned long)pipe.totalBytes,
+                    (unsigned long)pipe.startOffset,
+                    (unsigned long)pipe.baud);
+
+      bool pipeDone = false;
+      while (offset < file.size && !pipeDone) {
+        ChunkResult pipeChunk;
+        bool pipeFatal = false;
+        uint32_t pipeStartMs = millis();
+        bool gotPipeChunk = bridgeReadPipeBlock(pipe, serverChunk, pipeChunk, pipeDone, pipeFatal);
+        uint32_t pipeMs = millis() - pipeStartMs;
+        uartTransferMs += pipeMs;
+
+        if (!gotPipeChunk || !pipeChunk.ok || pipeChunk.offset != offset ||
+            pipeChunk.length == 0 || pipeChunk.length > session.chunkSize) {
+          Serial.printf("GETPIPE failed at offset %lu\n", (unsigned long)offset);
+          if (!pipeDone) bridgeStopPipeStream();
+          bridgeFailure = true;
+          return false;
+        }
+
+        sdReadMs += pipeChunk.sdReadMs;
+        Serial.printf("GETPIPE %lu bytes at offset %lu in %lu ms\n",
+                      (unsigned long)pipeChunk.length,
+                      (unsigned long)pipeChunk.offset,
+                      (unsigned long)pipeMs);
+
+        uint32_t serverStartMs = millis();
+        uint32_t chunkServerProcessMs = 0;
+        bool uploaded = serverUploadChunk(serverEpoch, session, serverChunk, offset, pipeChunk.length, chunkServerProcessMs);
+        serverTransferMs += millis() - serverStartMs;
+        serverProcessMs += chunkServerProcessMs;
+        if (!uploaded) {
+          Serial.printf("serverUploadChunk failed at offset %lu\n", (unsigned long)offset);
+          if (!pipeDone) bridgeStopPipeStream();
+          return false;
+        }
+
+        offset += pipeChunk.length;
+        if ((offset % (256UL * 1024UL)) == 0 || offset >= file.size) {
+          Serial.printf("Progress %s: %lu/%lu\n", file.path.c_str(), (unsigned long)offset, (unsigned long)file.size);
+        }
+
+        PowerState p = readPowerState();
+        if (p.batteryV >= BATTERY_SENSE_INVALID_BELOW_V && p.batteryV < MIN_ACTIVE_BATTERY_V) {
+          Serial.printf("Battery under load fell below emergency cutoff: %.3f V\n", p.batteryV);
+          if (!pipeDone) bridgeStopPipeStream();
+          return false;
+        }
+
+        if (!pipeDone && !bridgeContinuePipeStream(pipe)) {
+          Serial.printf("GETPIPE NEXT failed at offset %lu\n", (unsigned long)offset);
+          bridgeFailure = true;
+          return false;
+        }
+      }
+
+      if (offset < file.size) {
+        Serial.printf("GETPIPE ended early at offset %lu of %lu\n", (unsigned long)offset, (unsigned long)file.size);
+        bridgeFailure = true;
+        return false;
+      }
+    } else if (!pipeUnsupported) {
+      Serial.printf("GETPIPE did not start at offset %lu\n", (unsigned long)offset);
+      bridgeFailure = true;
+      return false;
+    }
+  }
+#endif
+
   while (offset < file.size) {
     uint32_t remaining = file.size - offset;
     uint32_t batchBytes = remaining > session.chunkSize ? session.chunkSize : remaining;

@@ -102,6 +102,12 @@
 // remain at 115200.
 #define MOTH_STREAM_FAST_ENABLED     1
 #define MOTH_STREAM_FAST_BAUD        115200
+// Production fast path: one 115200 GETPIPE command keeps the AudioMoth SD file
+// open and sends repeated high-baud AudioMoth->ESP32 blocks. The ESP replies
+// at 115200 with NEXT only after the server accepts the previous block.
+#define MOTH_PIPE_FAST_ENABLED       1
+#define MOTH_PIPE_FAST_BAUD          230400
+#define MOTH_PIPE_NEXT_TIMEOUT_MS    120000
 #define MOTH_STREAM_TEST_BAUD_1      230400
 #define MOTH_STREAM_TEST_BAUD_2      460800
 #define MOTH_STREAM_TEST_BAUD_3      921600
