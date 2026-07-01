@@ -113,6 +113,7 @@ bool bridgeEnableFastBaud();
 uint32_t bridgeTransferChunkBytes();
 bool bridgeSetTime(uint32_t epochUtc, uint32_t milliseconds);
 bool bridgeStatus(String &statusOut);
+void bridgeApplyStatusCapabilities(const String &status);
 bool bridgeList(MothFile *files, size_t maxFiles, size_t &countOut, MothSdInfo *sdInfo);
 bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &receivedOut, uint32_t &elapsedMsOut, uint32_t &crcOut);
 bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requestedBytes, uint8_t *dest, ChunkResult &result, bool &fatalOut);

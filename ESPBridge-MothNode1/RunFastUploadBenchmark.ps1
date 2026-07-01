@@ -129,6 +129,7 @@ try {
 $lines | Set-Content -LiteralPath $logPath -Encoding UTF8
 $baudLine = $lines | Where-Object { $_ -like "AudioMoth fast payload mode armed at*" } | Select-Object -Last 1
 $streamLines = $lines | Where-Object { $_ -like "GETSTREAM * bytes at offset *" }
+$streamStatusMissing = $lines | Where-Object { $_ -like "AudioMoth STATUS lacks stream capability fields*" } | Select-Object -First 1
 $streamUnavailable = $lines | Where-Object { $_ -like "AudioMoth GETSTREAM is unavailable*" } | Select-Object -First 1
 $streamFatal = $lines | Where-Object {
   $_ -like "GETSTREAM failed fatally*" -or
@@ -155,6 +156,10 @@ if ($streamLines.Count -gt 0) {
   if ($streamUnavailable -like "*unsupported_baud*") {
     Write-Host "AudioMoth firmware does not support the ESP's requested stream baud. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
   }
+} elseif ($streamStatusMissing) {
+  Write-Host "GETSTREAM was skipped because the AudioMoth STATUS line lacks protocol v2 stream capability fields."
+  Write-Host $streamStatusMissing
+  Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
 } elseif ($streamFatal) {
   Write-Host "GETSTREAM failed before completion:"
   Write-Host $streamFatal

@@ -21,6 +21,7 @@ bool bridgeSessionBaudActive = false;
 uint32_t bridgeCurrentBaud = MOTH_UART_BAUD;
 uint32_t bridgeRejectedSessionBauds[3] = {0, 0, 0};
 uint8_t bridgeRejectedSessionBaudCount = 0;
+bool bridgeFastStreamSupported = true;
 
 void bridgeResetStats() {
   bridgeRawBytesRead = 0;
@@ -433,6 +434,51 @@ bool bridgeStatus(String &statusOut) {
   return bridgeExpectResponse("STATUS", "OK STATUS", &statusOut);
 }
 
+bool bridgeStatusFieldUInt(const String &status, const char *key, unsigned long &valueOut) {
+  String needle = String(key) + "=";
+  int start = status.indexOf(needle);
+  if (start < 0) return false;
+  start += needle.length();
+
+  int end = start;
+  while (end < (int)status.length() && status[end] >= '0' && status[end] <= '9') {
+    end += 1;
+  }
+  if (end == start) return false;
+
+  valueOut = strtoul(status.substring(start, end).c_str(), nullptr, 10);
+  return true;
+}
+
+void bridgeApplyStatusCapabilities(const String &status) {
+#if MOTH_STREAM_FAST_ENABLED
+  unsigned long stream = 0;
+  unsigned long streamBaud = 0;
+  unsigned long streamBytes = 0;
+  bool hasStream = bridgeStatusFieldUInt(status, "stream", stream);
+  bool hasStreamBaud = bridgeStatusFieldUInt(status, "stream_baud", streamBaud);
+  bool hasStreamBytes = bridgeStatusFieldUInt(status, "stream_bytes", streamBytes);
+
+  if (!hasStream || !hasStreamBaud || !hasStreamBytes) {
+    if (bridgeFastStreamSupported) {
+      Serial.println("AudioMoth STATUS lacks stream capability fields; using legacy GET until the protocol v2 AudioMoth bin is flashed");
+    }
+    bridgeFastStreamSupported = false;
+    return;
+  }
+
+  if (stream != 1 || streamBaud != MOTH_STREAM_FAST_BAUD || streamBytes < SERVER_UPLOAD_CHUNK_BYTES) {
+    Serial.printf("AudioMoth stream capability mismatch: stream=%lu stream_baud=%lu stream_bytes=%lu expected_baud=%u expected_bytes=%u\n",
+                  stream, streamBaud, streamBytes, MOTH_STREAM_FAST_BAUD, SERVER_UPLOAD_CHUNK_BYTES);
+    bridgeFastStreamSupported = false;
+    return;
+  }
+
+  bridgeFastStreamSupported = true;
+  Serial.printf("AudioMoth stream capability OK: baud=%lu bytes=%lu\n", streamBaud, streamBytes);
+#endif
+}
+
 bool bridgePathCharAllowed(char c) {
   return (c >= 'A' && c <= 'Z') ||
          (c >= 'a' && c <= 'z') ||
@@ -582,8 +628,6 @@ uint32_t bridgeReadUInt32LE(const uint8_t *data) {
          ((uint32_t)data[2] << 16) |
          ((uint32_t)data[3] << 24);
 }
-
-bool bridgeFastStreamSupported = true;
 
 bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &receivedOut, uint32_t &elapsedMsOut, uint32_t &crcOut) {
   receivedOut = 0;

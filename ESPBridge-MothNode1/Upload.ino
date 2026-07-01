@@ -67,6 +67,7 @@ bool openBridgeUploadSession(long serverEpoch) {
 
     String status;
     bool statusOk = bridgeStatus(status);
+    if (statusOk) bridgeApplyStatusCapabilities(status);
     if (statusOk && bridgeStatusAllowsUpload(status)) {
       Serial.printf("AudioMoth file service ready after %lu attempt(s): %s\n",
                     (unsigned long)attempt, status.c_str());
