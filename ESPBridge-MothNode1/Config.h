@@ -107,7 +107,6 @@
 // at 115200 with NEXT only after the server accepts the previous block.
 #define MOTH_PIPE_FAST_ENABLED       1
 #define MOTH_PIPE_FAST_BAUD          230400
-#define MOTH_PIPE_NEXT_TIMEOUT_MS    120000
 #define MOTH_STREAM_TEST_BAUD_1      230400
 #define MOTH_STREAM_TEST_BAUD_2      460800
 #define MOTH_STREAM_TEST_BAUD_3      921600
