@@ -129,7 +129,10 @@ try {
 $lines | Set-Content -LiteralPath $logPath -Encoding UTF8
 $baudLine = $lines | Where-Object { $_ -like "AudioMoth fast payload mode armed at*" } | Select-Object -Last 1
 $pipeLines = $lines | Where-Object { $_ -like "GETPIPE * bytes at offset *" }
-$pipeStatusMissing = $lines | Where-Object { $_ -like "AudioMoth STATUS lacks pipe capability fields*" } | Select-Object -First 1
+$pipeStatusMissing = $lines | Where-Object {
+  $_ -like "AudioMoth STATUS lacks pipe capability fields*" -or
+  $_ -like "AudioMoth STATUS lacks protocol v4 ACKed pipe fields*"
+} | Select-Object -First 1
 $pipeUnavailable = $lines | Where-Object { $_ -like "AudioMoth GETPIPE is unavailable*" } | Select-Object -First 1
 $pipeFatal = $lines | Where-Object {
   $_ -like "GETPIPE failed*" -or
@@ -163,7 +166,7 @@ if ($pipeLines.Count -gt 0) {
   Write-Host "GETPIPE unavailable; benchmark used the older stream/fallback path."
   Write-Host $pipeUnavailable
 } elseif ($pipeStatusMissing) {
-  Write-Host "GETPIPE was skipped because the AudioMoth STATUS line lacks protocol v3 pipe capability fields."
+  Write-Host "GETPIPE was skipped because the AudioMoth STATUS line lacks protocol v4 ACKed pipe capability fields."
   Write-Host $pipeStatusMissing
   Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
 } elseif ($pipeFatal) {
@@ -184,7 +187,7 @@ if ($pipeLines.Count -gt 0) {
     Write-Host "AudioMoth firmware does not support the ESP's requested stream baud. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
   }
 } elseif ($streamStatusMissing) {
-  Write-Host "GETSTREAM was skipped because the AudioMoth STATUS line lacks protocol v2/v3 stream capability fields."
+  Write-Host "GETSTREAM was skipped because the AudioMoth STATUS line lacks stream capability fields."
   Write-Host $streamStatusMissing
   Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
 } elseif ($streamFatal) {

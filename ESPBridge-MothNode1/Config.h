@@ -100,13 +100,15 @@
 // Preferred fast path: one 115200 command starts a one-way AudioMoth->ESP32
 // stream at the fastest measured command-stable baud. ESP-to-AudioMoth commands
 // remain at 115200.
-#define MOTH_STREAM_FAST_ENABLED     1
+#define MOTH_STREAM_FAST_ENABLED     0
 #define MOTH_STREAM_FAST_BAUD        115200
 // Production fast path: one 115200 GETPIPE command keeps the AudioMoth SD file
-// open and sends repeated high-baud AudioMoth->ESP32 blocks. The ESP replies
-// at 115200 with NEXT only after the server accepts the previous block.
+// open and sends repeated 921600-baud blocks. Each UART frame is ACKed at the
+// fast baud after CRC validation; the ESP returns to 115200 for NEXT only after
+// the server accepts the previous block.
 #define MOTH_PIPE_FAST_ENABLED       1
-#define MOTH_PIPE_FAST_BAUD          230400
+#define MOTH_PIPE_FAST_BAUD          921600
+#define MOTH_PIPE_FRAME_RETRIES      3
 #define MOTH_STREAM_TEST_BAUD_1      230400
 #define MOTH_STREAM_TEST_BAUD_2      460800
 #define MOTH_STREAM_TEST_BAUD_3      921600
@@ -126,9 +128,9 @@
 #define MOTH_BUSY_WAIT_MS            5000
 #define MOTH_ASSERT_REQ_AT_BOOT      true
 #define MOTH_MAX_FILES_PER_SESSION   16
-#define MOTH_LEGACY_CHUNK_BYTES      4096
-#define MOTH_CHUNK_BYTES             8192
-#define SERVER_UPLOAD_CHUNK_BYTES    65536
+#define MOTH_LEGACY_CHUNK_BYTES      2048
+#define MOTH_CHUNK_BYTES             2048
+#define SERVER_UPLOAD_CHUNK_BYTES    131072
 #define MOTH_UPLOAD_WINDOW_WAIT_MS   120000
 #define MOTH_UPLOAD_WINDOW_RETRY_MS  5000
 #define USB_BRIDGE_DEBUG_ON_SERVER_FAIL true

@@ -11,7 +11,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Keeps AudioMoth commands at 115200 baud while using 230400-baud framed `GETPIPE` blocks when the matching AudioMoth bin supports them.
+- Keeps AudioMoth commands at 115200 baud while using 921600-baud ACKed `GETPIPE` frames when the matching AudioMoth bin supports them.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -136,10 +136,10 @@ POST /v1/nodes/{NODE_ID}/delete_confirm
 ```
 
 The chunk endpoint receives raw `application/octet-stream` bytes. AudioMoth
-provides CRC-checked 8192-byte UART payloads. The ESP combines up to eight of
-them in a heap-allocated 65536-byte buffer and sends one signed server PUT.
-This keeps UART reads small enough for AudioMoth RAM while cutting HTTPS request
-overhead by 16 times compared with the old 4096-byte one-request-per-read path.
+provides CRC-checked 2048-byte UART frames. The ESP ACKs each good frame, NAKs
+bad frames for retry, combines up to 128 KiB in a heap-allocated buffer, and
+sends one signed server PUT. This keeps UART retries cheap while cutting HTTPS
+request overhead compared with one-request-per-read uploads.
 The ESP signs only the URL path because MothServer authenticates
 `request.url.path`.
 
@@ -151,27 +151,23 @@ The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
 interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
 PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
 ESP first tries `GETPIPE`: one 115200-baud command opens the SD file once, then
-AudioMoth sends repeated 230400-baud blocks of up to 64 KiB, framed as
-CRC32-checked 8 KiB pieces. After each validated block, AudioMoth returns to
-115200 and waits inside the same command for `NEXT <offset>`; the ESP only sends
-`NEXT` after the server accepts the previous PUT. This keeps the fragile
-ESP-to-AudioMoth direction slow while moving payload bytes faster and avoiding
-per-block file reopen/command overhead.
+AudioMoth sends repeated 921600-baud blocks of up to 128 KiB, framed as
+CRC32-checked 2 KiB pieces. The ESP ACKs each validated frame at the fast baud;
+AudioMoth resends a frame on NAK or ACK timeout. After each validated block,
+AudioMoth returns to 115200 and waits inside the same command for `NEXT
+<offset>`; the ESP only sends `NEXT` after the server accepts the previous PUT.
+This keeps the fragile ESP-to-AudioMoth command direction slow while moving
+payload bytes faster and avoiding per-block file reopen/command overhead.
 For bench testing without a recording on the SD card, `MOTH_TEST_STREAM` asks
 AudioMoth to send a deterministic 1 MiB max stream. The diagnostic probes
 921600 first, then falls back to 460800 and 230400, reporting the highest
 CRC-checked command-stable rate.
 
-If `GETPIPE` is unavailable, the ESP falls back to `GETSTREAM`, then to the
-proven 115200-baud `GET` path with 4 KiB UART reads aggregated into 64 KiB
-server PUT requests.
-Live tests showed that 128 KiB could not allocate and 96 KiB starved the HTTPS
-client. Whole-session high baud remains disabled because bench testing showed
-ESP-to-AudioMoth commands were not reliable above 115200. Per-block high-baud
-payload switching also moved one block and then lost command control on the
-current 4-inch 30 AWG wiring, so production upload now uses slow control plus
-fast one-way payload blocks. The ESP USB debug console continues to use 115200
-baud.
+If protocol v4 `GETPIPE` is unavailable, the ESP falls back to the proven
+115200-baud `GET` path with 2 KiB UART reads aggregated into 128 KiB server PUT
+requests. Whole-session high baud remains disabled because ESP-to-AudioMoth
+commands are kept deliberately slow and recoverable. The ESP USB debug console
+continues to use 115200 baud.
 
 ## Command types supported
 
