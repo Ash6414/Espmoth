@@ -39,6 +39,21 @@ void bridgeFlushInput() {
   while (MothSerial.available()) MothSerial.read();
 }
 
+void bridgeDrainInputQuiet(uint32_t quietMs, uint32_t maxMs) {
+  uint32_t start = millis();
+  uint32_t quietStart = millis();
+  while (millis() - start < maxMs) {
+    bool sawByte = false;
+    while (MothSerial.available()) {
+      MothSerial.read();
+      sawByte = true;
+    }
+    if (sawByte) quietStart = millis();
+    if (millis() - quietStart >= quietMs) return;
+    delay(1);
+  }
+}
+
 void bridgeRestartUart(uint32_t baud, bool clearInput) {
   MothSerial.flush();
   MothSerial.end();
@@ -191,7 +206,7 @@ bool bridgeProbeDefaultControl(const char *context) {
     }
     delay(100);
   }
-  Serial.printf("%s control resync failed after fast stream\n", context);
+  Serial.printf("%s control resync failed\n", context);
   return false;
 }
 
@@ -710,11 +725,15 @@ bool bridgeGetStreamBlock(const String &path, uint32_t offset, uint32_t requeste
     return false;
   }
 
-  bridgeFlushInput();
+  if (!bridgeProbeDefaultControl("GETSTREAM preflight")) {
+    fatalOut = true;
+    return false;
+  }
+  bridgeDrainInputQuiet(25, 250);
   bridgeSendLine("GETSTREAM " + path + " " + String(offset) + " " + String(requestedBytes) + " " + String(MOTH_STREAM_FAST_BAUD));
 
   String line;
-  if (!bridgeReadExpectedLine("STREAM ", line, MOTH_DATA_HEADER_TIMEOUT_MS) || !line.startsWith("STREAM ")) {
+  if (!bridgeReadExpectedLineIgnoringNoise("STREAM ", line, MOTH_DATA_HEADER_TIMEOUT_MS) || !line.startsWith("STREAM ")) {
     if (line.startsWith("ERR CMD") || line.startsWith("ERR ARG")) {
       Serial.printf("AudioMoth GETSTREAM is unavailable: %s\n", line.c_str());
       bridgeFastStreamSupported = false;
@@ -847,11 +866,11 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   bool useFastPayload = bridgeFastBaudActive && !bridgeSessionBaudActive;
   const char *headerPrefix = useFastPayload ? "FASTDATA " : "DATA ";
   for (uint8_t attempt = 1; attempt <= 3; attempt++) {
-    bridgeFlushInput();
+    bridgeDrainInputQuiet(25, 250);
     String command = useFastPayload ? "GETFAST " : "GET ";
     bridgeSendLine(command + path + " " + String(offset) + " " + String(maxBytes));
 
-    if (bridgeReadExpectedLine(headerPrefix, line, MOTH_DATA_HEADER_TIMEOUT_MS) && line.startsWith(headerPrefix)) {
+    if (bridgeReadExpectedLineIgnoringNoise(headerPrefix, line, MOTH_DATA_HEADER_TIMEOUT_MS) && line.startsWith(headerPrefix)) {
       gotHeader = true;
       break;
     }

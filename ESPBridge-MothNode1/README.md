@@ -11,7 +11,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Keeps AudioMoth commands at 115200 baud and uses one-way 460800-baud streaming when the matching AudioMoth bin supports `GETSTREAM`.
+- Keeps AudioMoth commands at 115200 baud and uses one-way 230400-baud streaming when the matching AudioMoth bin supports `GETSTREAM`.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -150,20 +150,25 @@ When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD tota
 The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
 interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
 PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
-ESP first tries `GETSTREAM`: one slow command starts a one-way 460800-baud
+ESP first tries `GETSTREAM`: one slow command starts a one-way 230400-baud
 AudioMoth-to-ESP stream of up to 64 KiB, framed as CRC32-checked 8 KiB pieces.
 The ESP writes the validated stream directly into the 64 KiB HTTPS PUT buffer.
+Before each stream request, the ESP drains idle bridge chatter and verifies
+115200-baud control with `PING` so a closed or wedged service window is caught
+before another file chunk is requested.
 For bench testing without a recording on the SD card, `MOTH_TEST_STREAM` asks
 AudioMoth to send a deterministic 1 MiB max stream. The diagnostic probes
 921600 first, then falls back to 460800 and 230400, reporting the highest
-CRC-checked stable rate.
+CRC-checked command-stable rate.
 
 If `GETSTREAM` is unavailable, the ESP falls back to the proven 115200-baud
 `GET` path with 4 KiB UART reads aggregated into 64 KiB server PUT requests.
 Live tests showed that 128 KiB could not allocate and 96 KiB starved the HTTPS
 client. Whole-session high baud remains disabled because bench testing showed
-ESP-to-AudioMoth commands were not reliable above 115200. The ESP USB debug
-console continues to use 115200 baud.
+ESP-to-AudioMoth commands were not reliable above 115200. The one-way stream
+path keeps 230400 as the production setting because 460800 moved bytes but lost
+post-stream 115200 command control on the current 4-inch 30 AWG wiring. The ESP
+USB debug console continues to use 115200 baud.
 
 ## Command types supported
 

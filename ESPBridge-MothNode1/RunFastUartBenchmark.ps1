@@ -2,7 +2,7 @@ param(
   [string]$Port = "COM7",
   [int]$Baud = 115200,
   [string]$NodeId = "AUTO",
-  [int]$MonitorSeconds = 180
+  [int]$MonitorSeconds = 420
 )
 
 $ErrorActionPreference = "Stop"

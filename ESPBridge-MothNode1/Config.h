@@ -96,10 +96,10 @@
 #define MOTH_SESSION_RETRY_BAUD_2    230400
 #define MOTH_SESSION_RESET_MS        4500
 // Preferred fast path: one 115200 command starts a one-way AudioMoth->ESP32
-// stream at the fastest measured-stable baud. ESP-to-AudioMoth commands remain
-// at 115200.
+// stream at the fastest measured command-stable baud. ESP-to-AudioMoth commands
+// remain at 115200.
 #define MOTH_STREAM_FAST_ENABLED     1
-#define MOTH_STREAM_FAST_BAUD        460800
+#define MOTH_STREAM_FAST_BAUD        230400
 #define MOTH_STREAM_TEST_BAUD_1      230400
 #define MOTH_STREAM_TEST_BAUD_2      460800
 #define MOTH_STREAM_TEST_BAUD_3      921600
