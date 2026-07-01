@@ -130,7 +130,12 @@ $lines | Set-Content -LiteralPath $logPath -Encoding UTF8
 $baudLine = $lines | Where-Object { $_ -like "AudioMoth fast payload mode armed at*" } | Select-Object -Last 1
 $streamLines = $lines | Where-Object { $_ -like "GETSTREAM * bytes at offset *" }
 $streamUnavailable = $lines | Where-Object { $_ -like "AudioMoth GETSTREAM is unavailable*" } | Select-Object -First 1
-$streamFatal = $lines | Where-Object { $_ -like "GETSTREAM failed fatally*" -or $_ -like "GETSTREAM *timeout*" -or $_ -like "GETSTREAM CRC mismatch*" } | Select-Object -First 1
+$streamFatal = $lines | Where-Object {
+  $_ -like "GETSTREAM failed fatally*" -or
+  $_ -like "GETSTREAM *timeout*" -or
+  $_ -like "GETSTREAM CRC mismatch*" -or
+  $_ -like "GETSTREAM *control resync failed*"
+} | Select-Object -First 1
 $results = $lines | Where-Object { $_ -like "Completed *end_to_end=*" }
 $listFailure = $lines | Where-Object { $_ -like "AudioMoth LIST *" } | Select-Object -Last 1
 
@@ -158,6 +163,10 @@ if ($streamLines.Count -gt 0) {
 if ($results) {
   $results | ForEach-Object { Write-Host $_ }
   exit 0
+}
+if ($streamFatal) {
+  Write-Host "First GETSTREAM failure:"
+  Write-Host $streamFatal
 }
 if ($listFailure) { Write-Host $listFailure }
 Write-Host "No completed file transfer was measured. Ensure the AudioMoth SD card contains a file not already uploaded."

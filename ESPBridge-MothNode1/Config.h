@@ -17,6 +17,8 @@
 
 #define DEFAULT_BASE_URL        "https://cerberus.tail1881ff.ts.net"
 #define SERVER_FALLBACK_BASE_URL "http://192.168.0.207:8001"
+#define PREFER_FALLBACK_SERVER_WHEN_REACHABLE true
+#define FALLBACK_SERVER_PROBE_TIMEOUT_MS 2500
 #define DEFAULT_NODE_ID         ""
 #define DEFAULT_KEY_ID          ""
 #define DEFAULT_DEVICE_SECRET   ""
@@ -91,15 +93,15 @@
 // Whole-session high-baud mode keeps commands and DATA payloads at one faster
 // baud after a proven BAUD/PING handshake. Failed probes reopen at 115200.
 #define MOTH_SESSION_FAST_ENABLED    0
-#define MOTH_SESSION_FAST_BAUD       921600
+#define MOTH_SESSION_FAST_BAUD       230400
 #define MOTH_SESSION_RETRY_BAUD_1    460800
-#define MOTH_SESSION_RETRY_BAUD_2    230400
+#define MOTH_SESSION_RETRY_BAUD_2    921600
 #define MOTH_SESSION_RESET_MS        4500
 // Preferred fast path: one 115200 command starts a one-way AudioMoth->ESP32
 // stream at the fastest measured command-stable baud. ESP-to-AudioMoth commands
 // remain at 115200.
 #define MOTH_STREAM_FAST_ENABLED     1
-#define MOTH_STREAM_FAST_BAUD        230400
+#define MOTH_STREAM_FAST_BAUD        115200
 #define MOTH_STREAM_TEST_BAUD_1      230400
 #define MOTH_STREAM_TEST_BAUD_2      460800
 #define MOTH_STREAM_TEST_BAUD_3      921600

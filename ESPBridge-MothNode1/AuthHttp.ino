@@ -201,7 +201,7 @@ uint32_t estimatedEpochUtc() {
   return 0;
 }
 
-long getServerTimeFromBaseUrl(const String &baseUrl, const String &path, uint32_t *rttMsOut) {
+long getServerTimeFromBaseUrl(const String &baseUrl, const String &path, uint32_t *rttMsOut, uint32_t timeoutMs) {
   WiFiClient plainClient;
   WiFiClientSecure secureClient;
   HTTPClient http;
@@ -214,7 +214,7 @@ long getServerTimeFromBaseUrl(const String &baseUrl, const String &path, uint32_
     Serial.printf("GET %s begin failed for %s\n", path.c_str(), normalized.c_str());
     return 0;
   }
-  http.setTimeout(HTTP_TIMEOUT_MS);
+  http.setTimeout(timeoutMs);
 
   uint32_t t0 = millis();
   int code = http.GET();
@@ -242,14 +242,24 @@ long getServerTimeFromBaseUrl(const String &baseUrl, const String &path, uint32_
 
 long getServerTime(uint32_t *rttMsOut) {
   String path = ENDPOINT_SERVER_TIME;
-  long epoch = getServerTimeFromBaseUrl(cfgBaseUrl(), path, rttMsOut);
+  String primary = normalizeRuntimeBaseUrl(cfgBaseUrl());
+  String fallback = normalizeRuntimeBaseUrl(String(SERVER_FALLBACK_BASE_URL));
+
+#if PREFER_FALLBACK_SERVER_WHEN_REACHABLE
+  if (fallback.length() > 0 && fallback != primary) {
+    Serial.printf("Checking LAN/fallback server %s\n", fallback.c_str());
+    long fallbackEpoch = getServerTimeFromBaseUrl(fallback, path, rttMsOut, FALLBACK_SERVER_PROBE_TIMEOUT_MS);
+    if (fallbackEpoch > 1700000000L) return fallbackEpoch;
+    Serial.println("LAN/fallback server not reachable; trying primary server");
+  }
+#endif
+
+  long epoch = getServerTimeFromBaseUrl(primary, path, rttMsOut, HTTP_TIMEOUT_MS);
   if (epoch > 1700000000L) return epoch;
 
-  String fallback = normalizeRuntimeBaseUrl(String(SERVER_FALLBACK_BASE_URL));
-  String primary = normalizeRuntimeBaseUrl(cfgBaseUrl());
   if (fallback.length() > 0 && fallback != primary) {
     Serial.printf("Primary server time failed; trying fallback %s\n", fallback.c_str());
-    epoch = getServerTimeFromBaseUrl(fallback, path, rttMsOut);
+    epoch = getServerTimeFromBaseUrl(fallback, path, rttMsOut, HTTP_TIMEOUT_MS);
     if (epoch > 1700000000L) return epoch;
   }
 

@@ -944,7 +944,9 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
     MothSerial.updateBaudRate(MOTH_UART_FAST_BAUD);
     bool magicFound = bridgeReadFastMagic(MOTH_FAST_MAGIC_TIMEOUT_MS);
     bool payloadRead = magicFound && bridgeReadBytes(mothChunk, parsedLength, MOTH_BINARY_TIMEOUT_MS);
-    bridgeRestartUart(MOTH_UART_BAUD, false);
+    MothSerial.updateBaudRate(MOTH_UART_BAUD);
+    bridgeCurrentBaud = MOTH_UART_BAUD;
+    delay(20);
 
     if (!magicFound) {
       Serial.printf("GETFAST preamble timeout at offset %lu\n", (unsigned long)offset);
@@ -959,7 +961,7 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
     }
 
     String doneLine;
-    if (!bridgeReadExpectedLine("OK FASTDATA", doneLine, 250)) {
+    if (!bridgeReadExpectedLine("OK FASTDATA", doneLine, 1000)) {
       if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
         Serial.printf("GETFAST completion error at offset %lu; got '%s'\n",
                       (unsigned long)offset, doneLine.c_str());
