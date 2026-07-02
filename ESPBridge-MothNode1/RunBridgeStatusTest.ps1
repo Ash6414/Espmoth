@@ -122,6 +122,7 @@ $result = "NO_RESULT"
 $usbDebugCommandSent = $false
 $ackSeen = $false
 $commandError = $false
+$usbDebugStatusMessage = $null
 
 $portObj = [System.IO.Ports.SerialPort]::new($Port, $Baud, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
 $portObj.ReadTimeout = 250
@@ -174,6 +175,7 @@ try {
       }
 
       if ($clean -like "USB_DEBUG_MOTH_STATUS OK STATUS*") {
+        $usbDebugStatusMessage = $clean.Substring("USB_DEBUG_MOTH_STATUS ".Length)
         $result = "PASS"
         break
       }
@@ -237,6 +239,9 @@ if row and row[0]:
   } catch {
     $responseMessage = $null
   }
+}
+if (!$responseMessage -and $usbDebugStatusMessage) {
+  $responseMessage = $usbDebugStatusMessage
 }
 
 Write-Host ""
