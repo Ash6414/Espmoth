@@ -137,7 +137,7 @@ POST /v1/nodes/{NODE_ID}/delete_confirm
 
 The chunk endpoint receives raw `application/octet-stream` bytes. AudioMoth
 provides CRC-checked 2048-byte UART frames. The ESP ACKs each good frame, NAKs
-bad frames for retry, combines up to 128 KiB in a heap-allocated buffer, and
+bad frames for retry, combines up to 64 KiB in a heap-allocated buffer, and
 sends one signed server PUT. This keeps UART retries cheap while cutting HTTPS
 request overhead compared with one-request-per-read uploads.
 The ESP signs only the URL path because MothServer authenticates
@@ -151,7 +151,7 @@ The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
 interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
 PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
 ESP first tries `GETPIPE`: one 115200-baud command opens the SD file once, then
-AudioMoth sends repeated 230400-baud blocks of up to 128 KiB, framed as
+AudioMoth sends repeated 230400-baud blocks of up to 64 KiB, framed as
 CRC32-checked 2 KiB pieces. The ESP ACKs each validated frame at the fast baud;
 AudioMoth resends a frame on NAK or ACK timeout. After each validated block,
 AudioMoth returns to 115200 and waits inside the same command for `NEXT
@@ -246,5 +246,7 @@ RunFastUploadBenchmark.cmd
 ```
 
 The benchmark queues `UPLOAD_NOW`, resets COM7, and records the negotiated UART
-rate plus separate UART, server, and end-to-end throughput. Logs are written to
-`logs/fast-upload-*.log`.
+rate plus separate UART, server, and end-to-end throughput. By default it asks
+the ESP32 to upload one smallest listed file between 1 KB and 20 MB, which keeps
+bench runs from starting with a huge unattended recording. Use `-FullSession` to
+upload every listed file instead. Logs are written to `logs/fast-upload-*.log`.

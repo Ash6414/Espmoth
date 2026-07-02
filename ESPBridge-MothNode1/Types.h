@@ -59,6 +59,14 @@ struct UploadSummary {
   MothSdInfo sd;
 };
 
+struct UploadOptions {
+  bool preferSmallest;
+  uint16_t maxFiles;
+  uint32_t minFileBytes;
+  uint32_t maxFileBytes;
+  String targetPath;
+};
+
 struct UploadSession {
   bool ok;
   bool alreadyComplete;

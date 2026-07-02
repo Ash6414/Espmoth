@@ -179,7 +179,78 @@ String runAudioMothTestStreamDiagnostic(long serverEpoch) {
   return "MOTH_TEST_STREAM failed all_bauds";
 }
 
+UploadOptions defaultUploadOptions() {
+  UploadOptions options;
+  options.preferSmallest = false;
+  options.maxFiles = 0;
+  options.minFileBytes = 0;
+  options.maxFileBytes = 0;
+  options.targetPath = "";
+  return options;
+}
+
+bool uploadOptionsActive(const UploadOptions &options) {
+  return options.preferSmallest ||
+         options.maxFiles > 0 ||
+         options.minFileBytes > 0 ||
+         options.maxFileBytes > 0 ||
+         options.targetPath.length() > 0;
+}
+
+String uploadBaseName(const String &path) {
+  int slash = path.lastIndexOf('/');
+  int backslash = path.lastIndexOf('\\');
+  int start = max(slash, backslash) + 1;
+  return path.substring(start);
+}
+
+bool uploadFileMatchesOptions(const MothFile &file, const UploadOptions &options) {
+  if (options.targetPath.length() > 0 &&
+      !file.path.equalsIgnoreCase(options.targetPath) &&
+      !uploadBaseName(file.path).equalsIgnoreCase(options.targetPath)) {
+    return false;
+  }
+  if (options.minFileBytes > 0 && file.size < options.minFileBytes) return false;
+  if (options.maxFileBytes > 0 && file.size > options.maxFileBytes) return false;
+  return true;
+}
+
+void sortUploadFilesBySize(MothFile *files, size_t fileCount) {
+  for (size_t i = 0; i < fileCount; i += 1) {
+    for (size_t j = i + 1; j < fileCount; j += 1) {
+      if (files[j].size < files[i].size) {
+        MothFile tmp = files[i];
+        files[i] = files[j];
+        files[j] = tmp;
+      }
+    }
+  }
+}
+
+size_t applyUploadOptions(MothFile *files, size_t fileCount, const UploadOptions &options) {
+  if (!uploadOptionsActive(options)) return fileCount;
+
+  size_t kept = 0;
+  for (size_t i = 0; i < fileCount; i += 1) {
+    if (!uploadFileMatchesOptions(files[i], options)) continue;
+    if (kept != i) files[kept] = files[i];
+    kept += 1;
+  }
+
+  if (options.preferSmallest) {
+    sortUploadFilesBySize(files, kept);
+  }
+  if (options.maxFiles > 0 && kept > options.maxFiles) {
+    kept = options.maxFiles;
+  }
+  return kept;
+}
+
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
+  return runAudioMothUploadSession(serverEpoch, forced, defaultUploadOptions());
+}
+
+UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced, const UploadOptions &options) {
   UploadSummary summary;
   summary.code = UPLOAD_NOT_ATTEMPTED;
   summary.filesSeen = 0;
@@ -213,11 +284,17 @@ UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced) {
   }
 
   summary.sd = sdInfo;
-  summary.filesSeen = (uint16_t)fileCount;
+  size_t listedCount = fileCount;
+  summary.filesSeen = (uint16_t)listedCount;
+  if (uploadOptionsActive(options)) {
+    fileCount = applyUploadOptions(files, fileCount, options);
+    Serial.printf("Upload filter selected %u of %u listed file(s)\n",
+                  (unsigned)fileCount, (unsigned)listedCount);
+  }
   if (fileCount == 0) {
     closeBridgeSession();
     summary.code = UPLOAD_NO_FILES;
-    summary.message = "no files listed";
+    summary.message = uploadOptionsActive(options) ? "no files matched upload filter" : "no files listed";
     return summary;
   }
 

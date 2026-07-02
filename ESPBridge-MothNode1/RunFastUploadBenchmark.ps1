@@ -2,7 +2,11 @@ param(
   [string]$Port = "COM7",
   [int]$Baud = 115200,
   [string]$NodeId = "AUTO",
-  [int]$MonitorSeconds = 900
+  [int]$MonitorSeconds = 900,
+  [int]$MaxFiles = 1,
+  [int64]$MinFileBytes = 1000,
+  [int64]$MaxFileBytes = 20971520,
+  [switch]$FullSession
 )
 
 $ErrorActionPreference = "Stop"
@@ -73,25 +77,51 @@ if ([string]::IsNullOrWhiteSpace($NodeId) -or $NodeId -eq "AUTO") {
   Write-Host "Auto-selected latest node: $NodeId"
 }
 
+if ($MaxFiles -lt 1) { throw "-MaxFiles must be at least 1" }
+if ($MinFileBytes -lt 0) { throw "-MinFileBytes cannot be negative" }
+if ($MaxFileBytes -lt 0) { throw "-MaxFileBytes cannot be negative" }
+if (!$FullSession -and $MaxFileBytes -gt 0 -and $MinFileBytes -gt $MaxFileBytes) {
+  throw "-MinFileBytes cannot be greater than -MaxFileBytes"
+}
+
+if ($FullSession) {
+  $uploadPayload = "{}"
+  Write-Host "Upload filter: full session, all listed files"
+} else {
+  $uploadPayload = ([ordered]@{
+    benchmark = $true
+    max_files = $MaxFiles
+    min_file_bytes = $MinFileBytes
+    max_file_bytes = $MaxFileBytes
+    prefer_smallest = $true
+  } | ConvertTo-Json -Compress)
+  Write-Host ("Upload filter: prefer smallest, max_files={0}, min_bytes={1}, max_bytes={2}" -f $MaxFiles, $MinFileBytes, $MaxFileBytes)
+}
+$uploadPayloadB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($uploadPayload))
+
 $queueScript = @"
 import sqlite3
 import sys
 import time
+import json
+import base64
 
-db_path, node_id = sys.argv[1], sys.argv[2]
+db_path, node_id, payload_b64 = sys.argv[1], sys.argv[2], sys.argv[3]
+payload_json = base64.b64decode(payload_b64).decode("utf-8")
+json.loads(payload_json)
 now = int(time.time())
 conn = sqlite3.connect(db_path, timeout=10)
 conn.execute("PRAGMA busy_timeout = 10000")
 row = conn.execute(
-    "INSERT INTO commands (node_id, command_type, payload_json, status, created_at, expires_at) VALUES (?, 'UPLOAD_NOW', '{}', 'PENDING', ?, ?)",
-    (node_id, now, now + 3600),
+    "INSERT INTO commands (node_id, command_type, payload_json, status, created_at, expires_at) VALUES (?, 'UPLOAD_NOW', ?, 'PENDING', ?, ?)",
+    (node_id, payload_json, now, now + 3600),
 )
 conn.commit()
 print(row.lastrowid)
 conn.close()
 "@
 
-$commandId = ($queueScript | & $pythonPath - $dbPath $NodeId).Trim()
+$commandId = ($queueScript | & $pythonPath - $dbPath $NodeId $uploadPayloadB64).Trim()
 if (!$commandId) { throw "Could not queue UPLOAD_NOW" }
 
 Write-Host "Queued UPLOAD_NOW command $commandId for $NodeId"

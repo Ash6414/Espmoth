@@ -70,6 +70,25 @@ void ackCommand(long serverEpoch, int commandId, const String &msg) {
   signedPostJson(path, body, serverEpoch, resp);
 }
 
+UploadOptions uploadOptionsFromCommand(JsonObject cmd) {
+  UploadOptions options = defaultUploadOptions();
+  JsonObject payload = cmd["payload"].as<JsonObject>();
+  if (payload.isNull()) return options;
+
+  options.preferSmallest = payload["prefer_smallest"] | false;
+  unsigned long maxFiles = payload["max_files"] | 0UL;
+  if (maxFiles > MOTH_MAX_FILES_PER_SESSION) maxFiles = MOTH_MAX_FILES_PER_SESSION;
+  options.maxFiles = (uint16_t)maxFiles;
+  options.minFileBytes = payload["min_file_bytes"] | 0UL;
+  options.maxFileBytes = payload["max_file_bytes"] | 0UL;
+
+  const char *target = payload["path"] | "";
+  if (!target || target[0] == '\0') target = payload["target_path"] | "";
+  if (!target || target[0] == '\0') target = payload["filename"] | "";
+  options.targetPath = String(target ? target : "");
+  return options;
+}
+
 void pollCommands(long serverEpoch, const PowerState &p) {
   String path = String("/v1/device/") + cfgNodeId() + "/commands";
   String resp;
@@ -97,10 +116,12 @@ void pollCommands(long serverEpoch, const PowerState &p) {
       postHeartbeat(serverEpoch, p, lastUpload);
       ackCommand(serverEpoch, id, "PING handled; fresh heartbeat posted");
     } else if (type == "UPLOAD_NOW") {
+      commandUploadAttempted = true;
       if (!powerAllowsUpload(p, true)) {
         ackCommand(serverEpoch, id, "UPLOAD_NOW refused by battery threshold");
       } else {
-        UploadSummary forced = runAudioMothUploadSession(serverEpoch, true);
+        UploadOptions options = uploadOptionsFromCommand(cmd);
+        UploadSummary forced = runAudioMothUploadSession(serverEpoch, true, options);
         lastUpload = forced;
         postHeartbeat(serverEpoch, p, forced);
         ackCommand(serverEpoch, id, forced.message);

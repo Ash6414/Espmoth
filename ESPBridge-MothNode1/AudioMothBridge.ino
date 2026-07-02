@@ -692,7 +692,7 @@ bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t request
     return false;
   }
   if (String(parsedPath) != path || parsedOffset != offset || totalBytes == 0 ||
-      totalBytes > requestedBytes || blockMax == 0 || blockMax > SERVER_UPLOAD_CHUNK_BYTES ||
+      totalBytes > requestedBytes || blockMax == 0 ||
       frameMax == 0 || frameMax > MOTH_CHUNK_BYTES || pipeBaud != MOTH_PIPE_FAST_BAUD) {
     Serial.printf("GETPIPE header mismatch: %s\n", line.c_str());
     return false;
@@ -731,7 +731,7 @@ bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, 
 #endif
 
   if (!pipe.active || !dest || pipe.receivedBytes >= pipe.totalBytes ||
-      pipe.blockMaxBytes == 0 || pipe.blockMaxBytes > SERVER_UPLOAD_CHUNK_BYTES ||
+      pipe.blockMaxBytes == 0 ||
       pipe.frameMaxBytes == 0 || pipe.frameMaxBytes > MOTH_CHUNK_BYTES ||
       pipe.baud != MOTH_PIPE_FAST_BAUD) {
     return false;
@@ -740,6 +740,11 @@ bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, 
   uint32_t blockOffset = pipe.startOffset + pipe.receivedBytes;
   uint32_t remaining = pipe.totalBytes - pipe.receivedBytes;
   uint32_t blockTarget = remaining > pipe.blockMaxBytes ? pipe.blockMaxBytes : remaining;
+  if (blockTarget > SERVER_UPLOAD_CHUNK_BYTES) {
+    Serial.printf("GETPIPE block target %lu exceeds ESP upload buffer %u\n",
+                  (unsigned long)blockTarget, SERVER_UPLOAD_CHUNK_BYTES);
+    return false;
+  }
 
   MothSerial.updateBaudRate(pipe.baud);
   bridgeCurrentBaud = pipe.baud;

@@ -51,6 +51,7 @@ uint8_t mothChunk[MOTH_CHUNK_BYTES];
 uint8_t *serverChunk = nullptr;
 String lastUploadMessage = "boot";
 UploadSummary lastUpload = {UPLOAD_NOT_ATTEMPTED, 0, 0, 0, "not attempted"};
+bool commandUploadAttempted = false;
 PowerState preWifiPowerState = {0.0f, 0.0f, false, false};
 bool preWifiPowerValid = false;
 
@@ -145,7 +146,9 @@ bool serverConfirmDeletes(long serverEpoch, const String &authorizationId, Delet
 // Upload.ino
 bool openBridgeSession(long serverEpoch);
 void closeBridgeSession();
+UploadOptions defaultUploadOptions();
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced);
+UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced, const UploadOptions &options);
 bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &file, bool &bridgeFailure);
 bool syncMothTimeOnly(long serverEpoch);
 String runAudioMothListDiagnostic(long serverEpoch);
@@ -240,7 +243,9 @@ void setup() {
   postHeartbeat(serverEpoch, power, lastUpload);
   pollCommands(serverEpoch, power);
 
-  if (powerAllowsUpload(power, false)) {
+  if (commandUploadAttempted) {
+    Serial.println("Skipping scheduled auto upload because UPLOAD_NOW already ran this boot");
+  } else if (powerAllowsUpload(power, false)) {
     lastUpload = runAudioMothUploadSession(serverEpoch, false);
     if (lastUpload.code == UPLOAD_SUCCESS) rtcSuccessfulUploads += 1;
     if (lastUpload.code == UPLOAD_SERVER_FAILED || lastUpload.code == UPLOAD_BRIDGE_FAILED) rtcFailedUploads += 1;
