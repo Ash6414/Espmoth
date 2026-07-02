@@ -132,6 +132,9 @@ $pipeStatusMissing = $lines | Where-Object {
   $_ -like "AudioMoth STATUS lacks pipe capability fields*" -or
   $_ -like "AudioMoth STATUS lacks protocol v4 ACKed pipe fields*"
 } | Select-Object -First 1
+$pipeCapabilityMismatch = $lines | Where-Object {
+  $_ -like "AudioMoth pipe capability mismatch:*"
+} | Select-Object -First 1
 $pipeUnavailable = $lines | Where-Object { $_ -like "AudioMoth GETPIPE is unavailable*" } | Select-Object -First 1
 $pipeFatal = $lines | Where-Object {
   $_ -like "GETPIPE failed*" -or
@@ -160,6 +163,10 @@ if ($pipeLines.Count -gt 0) {
   Write-Host "GETPIPE was skipped because the AudioMoth STATUS line lacks protocol v4 ACKed pipe capability fields."
   Write-Host $pipeStatusMissing
   Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
+} elseif ($pipeCapabilityMismatch) {
+  Write-Host "GETPIPE was skipped because ESP32 and AudioMoth disagree on pipe capability."
+  Write-Host $pipeCapabilityMismatch
+  Write-Host "The ESP32 expects the tested-stable 230400-baud pipe. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
 } elseif ($pipeFatal) {
   Write-Host "GETPIPE failed before completion:"
   Write-Host $pipeFatal
@@ -176,6 +183,10 @@ if ($results) {
 if ($pipeFatal) {
   Write-Host "First GETPIPE failure:"
   Write-Host $pipeFatal
+}
+if ($pipeCapabilityMismatch) {
+  Write-Host "First pipe capability mismatch:"
+  Write-Host $pipeCapabilityMismatch
 }
 if ($getLines.Count -gt 0) {
   Write-Host "First GET fallback failure:"
