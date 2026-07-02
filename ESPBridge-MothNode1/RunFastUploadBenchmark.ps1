@@ -177,7 +177,7 @@ if ($pipeLines.Count -gt 0) {
   Write-Host "GETPIPE failed before completion:"
   Write-Host $pipeFatal
 } elseif ($getLines.Count -gt 0) {
-  Write-Host "115200-baud GET fallback failed before completion:"
+  Write-Host "Legacy 115200-baud GET path emitted a failure; production upload requires GETPIPE."
   Write-Host ($getLines | Select-Object -First 1)
 } else {
   Write-Host "No fast UART mode was observed."
