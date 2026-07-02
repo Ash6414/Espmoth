@@ -51,7 +51,7 @@ uint8_t mothChunk[MOTH_CHUNK_BYTES];
 uint8_t *serverChunk = nullptr;
 String lastUploadMessage = "boot";
 UploadSummary lastUpload = {UPLOAD_NOT_ATTEMPTED, 0, 0, 0, "not attempted"};
-bool commandUploadAttempted = false;
+bool commandHandledThisBoot = false;
 PowerState preWifiPowerState = {0.0f, 0.0f, false, false};
 bool preWifiPowerValid = false;
 
@@ -243,8 +243,8 @@ void setup() {
   postHeartbeat(serverEpoch, power, lastUpload);
   pollCommands(serverEpoch, power);
 
-  if (commandUploadAttempted) {
-    Serial.println("Skipping scheduled auto upload because UPLOAD_NOW already ran this boot");
+  if (commandHandledThisBoot) {
+    Serial.println("Skipping scheduled auto upload because a queued command already ran this boot");
   } else if (powerAllowsUpload(power, false)) {
     lastUpload = runAudioMothUploadSession(serverEpoch, false);
     if (lastUpload.code == UPLOAD_SUCCESS) rtcSuccessfulUploads += 1;

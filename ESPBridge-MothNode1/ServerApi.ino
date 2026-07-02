@@ -111,12 +111,12 @@ void pollCommands(long serverEpoch, const PowerState &p) {
     int id = cmd["id"] | -1;
     String type = cmd["type"] | "";
     Serial.printf("Handling command id=%d type=%s\n", id, type.c_str());
+    commandHandledThisBoot = true;
 
     if (type == "PING") {
       postHeartbeat(serverEpoch, p, lastUpload);
       ackCommand(serverEpoch, id, "PING handled; fresh heartbeat posted");
     } else if (type == "UPLOAD_NOW") {
-      commandUploadAttempted = true;
       if (!powerAllowsUpload(p, true)) {
         ackCommand(serverEpoch, id, "UPLOAD_NOW refused by battery threshold");
       } else {
