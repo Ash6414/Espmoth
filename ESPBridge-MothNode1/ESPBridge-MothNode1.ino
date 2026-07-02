@@ -118,7 +118,9 @@ bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t request
 bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, bool &doneOut, bool &fatalOut);
 bool bridgeContinuePipeStream(const PipeSession &pipe);
 void bridgeStopPipeStream();
+#if MOTH_ALLOW_115200_GET_FALLBACK
 bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, ChunkResult &result);
+#endif
 bool bridgeDelete(const String &path);
 void bridgeDone();
 void bridgeRestoreDefaultBaud();

@@ -142,6 +142,9 @@ $pipeFatal = $lines | Where-Object {
   $_ -like "GETPIPE CRC mismatch*" -or
   $_ -like "GETPIPE *mismatch*"
 } | Select-Object -First 1
+$fallbackDisabled = $lines | Where-Object {
+  $_ -like "GETPIPE required for production upload; refusing 115200-baud GET fallback*"
+} | Select-Object -First 1
 $getLines = $lines | Where-Object { $_ -like "GET failed at offset *" }
 $results = $lines | Where-Object { $_ -like "Completed *end_to_end=*" }
 $listFailure = $lines | Where-Object { $_ -like "AudioMoth LIST *" } | Select-Object -Last 1
@@ -157,8 +160,11 @@ if ($pipeLines.Count -gt 0) {
   }
   Write-Host ("GETPIPE used: {0} piped block(s), {1:N0} bytes" -f $pipeLines.Count, $pipeBytes)
 } elseif ($pipeUnavailable) {
-  Write-Host "GETPIPE unavailable; benchmark used the 115200-baud GET fallback path."
+  Write-Host "GETPIPE unavailable."
   Write-Host $pipeUnavailable
+} elseif ($fallbackDisabled) {
+  Write-Host "GETPIPE did not complete and the slow 115200-baud GET recovery path is disabled in production firmware."
+  Write-Host $fallbackDisabled
 } elseif ($pipeStatusMissing) {
   Write-Host "GETPIPE was skipped because the AudioMoth STATUS line lacks protocol v4 ACKed pipe capability fields."
   Write-Host $pipeStatusMissing
@@ -183,6 +189,10 @@ if ($results) {
 if ($pipeFatal) {
   Write-Host "First GETPIPE failure:"
   Write-Host $pipeFatal
+}
+if ($fallbackDisabled) {
+  Write-Host "Fallback disabled:"
+  Write-Host $fallbackDisabled
 }
 if ($pipeCapabilityMismatch) {
   Write-Host "First pipe capability mismatch:"

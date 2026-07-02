@@ -143,7 +143,7 @@ request overhead compared with one-request-per-read uploads.
 The ESP signs only the URL path because MothServer authenticates
 `request.url.path`.
 
-If an upload is interrupted, `/v1/uploads/init` returns compact resume fields: `total_chunks`, `next_missing_chunk`, `next_missing_offset`, and `received_chunk_count`. The ESP32 starts the next `GET` at `next_missing_offset`; the server still treats duplicate chunks as idempotent retries, but normal restarts avoid re-sending old data.
+If an upload is interrupted, `/v1/uploads/init` returns compact resume fields: `total_chunks`, `next_missing_chunk`, `next_missing_offset`, and `received_chunk_count`. The ESP32 starts the next transfer at `next_missing_offset`; the server still treats duplicate chunks as idempotent retries, but normal restarts avoid re-sending old data.
 
 When the matching AudioMoth firmware sees a `LIST` command, it emits an `SD total_kb=... free_kb=...` line before file entries. The ESP32 logs that size, posts `sd_total_kb`, `sd_free_kb`, and `sd_free_mb` with the manifest, and reports `sd_free_mb` on the next heartbeat.
 
@@ -163,11 +163,13 @@ AudioMoth to send a deterministic 1 MiB max stream. The diagnostic probes
 921600 first, then falls back to 460800 and 230400, reporting the highest
 CRC-checked command-stable rate.
 
-If protocol v4 `GETPIPE` is unavailable, the ESP falls back to the proven
-115200-baud `GET` path with 2 KiB UART reads aggregated into 128 KiB server PUT
-requests. Whole-session high baud remains disabled because ESP-to-AudioMoth
-commands are kept deliberately slow and recoverable. The ESP USB debug console
-continues to use 115200 baud.
+Production upload requires protocol v4 `GETPIPE`. If the AudioMoth firmware
+does not report matching ACKed pipe capability, the ESP fails loudly instead of
+silently crawling through the old 115200-baud `GET` path. For recovery work,
+`MOTH_ALLOW_115200_GET_FALLBACK` can be set to `1` in `Config.h`; the default
+field build keeps that slow path disabled. Whole-session high baud remains
+disabled because ESP-to-AudioMoth commands are kept deliberately slow and
+recoverable. The ESP USB debug console continues to use 115200 baud.
 
 ## Command types supported
 

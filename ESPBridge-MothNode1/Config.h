@@ -97,6 +97,7 @@
 // fast baud after CRC validation; the ESP returns to 115200 for NEXT only after
 // the server accepts the previous block.
 #define MOTH_PIPE_FAST_ENABLED       1
+#define MOTH_ALLOW_115200_GET_FALLBACK 0
 #define MOTH_PIPE_FAST_BAUD          230400
 #define MOTH_PIPE_FRAME_RETRIES      3
 #define MOTH_STREAM_TEST_BAUD_1      230400

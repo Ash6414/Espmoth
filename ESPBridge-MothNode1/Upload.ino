@@ -400,6 +400,7 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
   }
 #endif
 
+#if MOTH_ALLOW_115200_GET_FALLBACK
   while (offset < file.size) {
     uint32_t remaining = file.size - offset;
     uint32_t batchBytes = remaining > session.chunkSize ? session.chunkSize : remaining;
@@ -446,6 +447,14 @@ bool uploadOneFile(long serverEpoch, const String &manifestId, const MothFile &f
       return false;
     }
   }
+#else
+  if (offset < file.size) {
+    Serial.printf("GETPIPE required for production upload; refusing 115200-baud GET fallback at offset %lu\n",
+                  (unsigned long)offset);
+    bridgeFailure = true;
+    return false;
+  }
+#endif
 
   closeUploadHttpClient();
   if (serverChunk) {

@@ -334,7 +334,7 @@ void bridgeApplyStatusCapabilities(const String &status) {
 
   if (!hasProtocol || protocol < 4 || !hasPipe || !hasPipeBaud || !hasPipeBytes || !hasPipeFrame || !hasPipeAck) {
     if (bridgePipeStreamSupported) {
-      Serial.println("AudioMoth STATUS lacks protocol v4 ACKed pipe fields; using 115200-baud GET fallback until the v4 AudioMoth bin is flashed");
+      Serial.println("AudioMoth STATUS lacks protocol v4 ACKed pipe fields; high-speed upload requires the current v4 AudioMoth bin");
     }
     bridgePipeStreamSupported = false;
   } else if (pipe != 1 || pipeBaud != MOTH_PIPE_FAST_BAUD || pipeBytes < SERVER_UPLOAD_CHUNK_BYTES ||
@@ -887,6 +887,7 @@ void bridgeStopPipeStream() {
 #endif
 }
 
+#if MOTH_ALLOW_115200_GET_FALLBACK
 bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, ChunkResult &result) {
   result.ok = false;
   result.path = path;
@@ -969,6 +970,7 @@ bool bridgeGetChunk(const String &path, uint32_t offset, uint32_t maxBytes, Chun
   result.ok = true;
   return true;
 }
+#endif
 
 bool bridgeDelete(const String &path) {
   String line;
