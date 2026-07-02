@@ -202,7 +202,7 @@ if ($pipeLines.Count -gt 0) {
 } elseif ($pipeCapabilityMismatch) {
   Write-Host "GETPIPE was skipped because ESP32 and AudioMoth disagree on pipe capability."
   Write-Host $pipeCapabilityMismatch
-  Write-Host "The ESP32 expects the tested-stable 230400-baud pipe. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
+  Write-Host "The ESP32 expects the stable 115200-baud ACKed pipe. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
 } elseif ($pipeFatal) {
   Write-Host "GETPIPE failed before completion:"
   Write-Host $pipeFatal

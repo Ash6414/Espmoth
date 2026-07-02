@@ -11,7 +11,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Polls queued commands.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
-- Keeps AudioMoth commands at 115200 baud while using tested-stable 230400-baud ACKed `GETPIPE` frames when the matching AudioMoth bin supports them.
+- Keeps AudioMoth commands and production `GETPIPE` payload frames at stable 115200 baud when the matching AudioMoth bin supports protocol v4.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -151,17 +151,18 @@ The matching AudioMoth firmware uses PB9/PB10, borrowed from the stock GPS
 interface resources. GPS support is disabled so the bridge owns PA7, PA8, PB9,
 PB10, and the bridge UART pins. Commands stay at 115200 baud. For uploads, the
 ESP first tries `GETPIPE`: one 115200-baud command opens the SD file once, then
-AudioMoth sends repeated 230400-baud blocks of up to 64 KiB, framed as
-CRC32-checked 2 KiB pieces. The ESP ACKs each validated frame at the fast baud;
+AudioMoth sends repeated 115200-baud blocks of up to 64 KiB, framed as
+CRC32-checked 2 KiB pieces. The ESP ACKs each validated frame;
 AudioMoth resends a frame on NAK or ACK timeout. After each validated block,
-AudioMoth returns to 115200 and waits inside the same command for `NEXT
-<offset>`; the ESP only sends `NEXT` after the server accepts the previous PUT.
-This keeps the fragile ESP-to-AudioMoth command direction slow while moving
-payload bytes faster and avoiding per-block file reopen/command overhead.
+AudioMoth waits inside the same command for `NEXT <offset>`; the ESP only sends
+`NEXT` after the server accepts the previous PUT. This avoids per-block file
+reopen/command overhead without paying the penalty of failed high-speed baud
+attempts.
 For bench testing without a recording on the SD card, `MOTH_TEST_STREAM` asks
 AudioMoth to send a deterministic 1 MiB max stream. The diagnostic probes
 921600 first, then falls back to 460800 and 230400, reporting the highest
-CRC-checked command-stable rate.
+CRC-checked command-stable rate. Those rates are bench diagnostics; production
+upload remains on the 115200 ACKed pipe.
 
 Production upload requires protocol v4 `GETPIPE`. If the AudioMoth firmware
 does not report matching ACKed pipe capability, the ESP fails loudly instead of
@@ -169,7 +170,7 @@ silently crawling through the old 115200-baud `GET` path. For recovery work,
 `MOTH_ALLOW_115200_GET_FALLBACK` can be set to `1` in `Config.h`; the default
 field build keeps that slow path disabled. Whole-session high baud remains
 disabled because ESP-to-AudioMoth commands are kept deliberately slow and
-recoverable. The ESP USB debug console continues to use 115200 baud.
+recoverable. The ESP USB debug console also uses 115200 baud.
 
 ## Command types supported
 
@@ -232,7 +233,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\RunFastUartBenchmark.p
 
 The benchmark queues `MOTH_TEST_STREAM`, resets the ESP32, and validates a
 deterministic 1 MiB AudioMoth-to-ESP stream by trying 921600, 460800, then
-230400 baud. It reports the highest CRC-checked stable UART rate and exits with
+230400 baud. It reports the highest CRC-checked diagnostic UART rate and exits with
 a clear unsupported-firmware message if AudioMoth has not been flashed with the
 `TESTSTREAM` bin yet.
 

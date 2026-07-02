@@ -247,7 +247,7 @@ if ($responseMessage) {
   if ($CommandType -eq "MOTH_STATUS" -and $responseMessage -like "OK STATUS*") {
     if ($responseMessage -like "*proto=4*" -and
         $responseMessage -like "*pipe=1*" -and
-        $responseMessage -like "*pipe_baud=230400*" -and
+        $responseMessage -like "*pipe_baud=115200*" -and
         $responseMessage -like "*pipe_bytes=65536*" -and
         $responseMessage -like "*pipe_frame=2048*" -and
         $responseMessage -like "*pipe_ack=1*") {
@@ -269,7 +269,7 @@ switch ($result) {
     exit 0
   }
   "NO_AUDIOMOTH_UART" {
-    Write-Host "ESP32 asserted ESP_REQ and sent PING, but received zero bytes. Check AudioMoth is flashed with the current READY-beacon bin, is running in CUSTOM mode, and has B9/B10 wired to GPIO32/GPIO33."
+    Write-Host "ESP32 asserted ESP_REQ and sent PING, but received zero bytes. Check AudioMoth is flashed with the current READY-beacon bin, is running in CUSTOM mode, and has B9/B10 wired to the original UART bridge pins."
     exit 2
   }
   "TIMEOUT_WITH_ACTIVITY" {

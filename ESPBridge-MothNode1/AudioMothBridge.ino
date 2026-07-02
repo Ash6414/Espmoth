@@ -275,7 +275,10 @@ bool bridgeWaitReady(uint32_t timeoutMs) {
 bool bridgeExpectResponse(const String &cmd, const char *expectedPrefix, String *responseOut = nullptr) {
   bridgeSendLine(cmd);
   String line;
-  if (!bridgeReadExpectedLine(expectedPrefix, line, MOTH_LINE_TIMEOUT_MS)) return false;
+  if (!bridgeReadExpectedLine(expectedPrefix, line, MOTH_LINE_TIMEOUT_MS)) {
+    if (responseOut) *responseOut = line;
+    return false;
+  }
   if (responseOut) *responseOut = line;
   return line.startsWith(expectedPrefix);
 }

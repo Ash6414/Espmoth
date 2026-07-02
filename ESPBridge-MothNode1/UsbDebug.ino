@@ -9,6 +9,8 @@ void runUsbDebugMothStatus(long serverEpoch) {
 
   if (ok) {
     Serial.printf("USB_DEBUG_MOTH_STATUS %s\n", status.c_str());
+  } else if (status.length()) {
+    Serial.printf("USB_DEBUG_MOTH_STATUS FAIL %s\n", status.c_str());
   } else {
     Serial.println("USB_DEBUG_MOTH_STATUS FAIL");
   }
