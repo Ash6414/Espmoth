@@ -143,7 +143,7 @@ $pipeFatal = $lines | Where-Object {
   $_ -like "GETPIPE *mismatch*"
 } | Select-Object -First 1
 $fallbackDisabled = $lines | Where-Object {
-  $_ -like "GETPIPE required for production upload; refusing 115200-baud GET fallback*"
+  $_ -like "GETPIPE required for production upload; rejecting 115200-baud GET fallback*"
 } | Select-Object -First 1
 $getLines = $lines | Where-Object { $_ -like "GET failed at offset *" }
 $results = $lines | Where-Object { $_ -like "Completed *end_to_end=*" }
