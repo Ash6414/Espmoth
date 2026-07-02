@@ -241,6 +241,7 @@ if row and row[0]:
 
 Write-Host ""
 Write-Host "Bridge test result: $result"
+$statusCapabilityOk = $true
 if ($responseMessage) {
   Write-Host "AudioMoth response: $responseMessage"
   if ($CommandType -eq "MOTH_STATUS" -and $responseMessage -like "OK STATUS*") {
@@ -252,6 +253,7 @@ if ($responseMessage) {
         $responseMessage -like "*pipe_ack=1*") {
       Write-Host "AudioMoth protocol v4 ACKed pipe capability: OK"
     } else {
+      $statusCapabilityOk = $false
       Write-Host "AudioMoth protocol v4 ACKed pipe capability: MISSING - flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
     }
   }
@@ -259,6 +261,10 @@ if ($responseMessage) {
 
 switch ($result) {
   "PASS" {
+    if (-not $statusCapabilityOk) {
+      Write-Host "AudioMoth replied over UART, but its pipe contract does not match this ESP build."
+      exit 7
+    }
     Write-Host "AudioMoth replied over UART and the queued $CommandType command was acknowledged."
     exit 0
   }
