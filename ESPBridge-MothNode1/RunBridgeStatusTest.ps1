@@ -196,7 +196,9 @@ try {
       }
 
       if ($clean -like "Bridge READY timeout*") {
-        if ($clean -match "rx_bytes=0" -and $clean -match "esp_req=1") {
+        if ($clean -match "rx_bytes=0" -and $clean -match "busy_low_seen=0" -and $clean -match "busy_now=1" -and $clean -match "esp_req=1") {
+          $result = "MOTH_BUSY_STUCK_HIGH"
+        } elseif ($clean -match "rx_bytes=0" -and $clean -match "esp_req=1") {
           $result = "NO_AUDIOMOTH_UART"
         } else {
           $result = "TIMEOUT_WITH_ACTIVITY"
@@ -281,6 +283,10 @@ switch ($result) {
   "NO_AUDIOMOTH_UART" {
     Write-Host "ESP32 asserted ESP_REQ and sent PING, but received zero bytes. Check AudioMoth is flashed with the current READY-beacon bin, is running in CUSTOM mode, and has B9/B10 wired to the original UART bridge pins."
     exit 2
+  }
+  "MOTH_BUSY_STUCK_HIGH" {
+    Write-Host "ESP32 asserted ESP_REQ and sent PING, but AudioMoth kept MOTH_BUSY high and returned zero UART bytes. This usually means AudioMoth is not running the bridge service path: check the switch is back in CUSTOM/run mode after flashing, the current CURRENT_AUDIOMOTH_FLASH\audiomoth.bin is flashed, and PA8/MOTH_BUSY is not shorted high."
+    exit 8
   }
   "TIMEOUT_WITH_ACTIVITY" {
     Write-Host "ESP32 saw some UART/pin activity, but did not complete the READY handshake."
