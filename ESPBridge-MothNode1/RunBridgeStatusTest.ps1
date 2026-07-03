@@ -249,17 +249,22 @@ Write-Host "Bridge test result: $result"
 $statusCapabilityOk = $true
 if ($responseMessage) {
   Write-Host "AudioMoth response: $responseMessage"
-  if ($CommandType -eq "MOTH_STATUS" -and $responseMessage -like "OK STATUS*") {
-    if ($responseMessage -like "*proto=4*" -and
-        $responseMessage -like "*pipe=1*" -and
-        $responseMessage -like "*pipe_baud=115200*" -and
-        $responseMessage -like "*pipe_bytes=65536*" -and
-        $responseMessage -like "*pipe_frame=2048*" -and
-        $responseMessage -like "*pipe_ack=1*") {
-      Write-Host "AudioMoth protocol v4 ACKed pipe capability: OK"
+  if ($CommandType -eq "MOTH_STATUS") {
+    if ($responseMessage -like "OK STATUS*") {
+      if ($responseMessage -like "*proto=4*" -and
+          $responseMessage -like "*pipe=1*" -and
+          $responseMessage -like "*pipe_baud=115200*" -and
+          $responseMessage -like "*pipe_bytes=65536*" -and
+          $responseMessage -like "*pipe_frame=2048*" -and
+          $responseMessage -like "*pipe_ack=1*") {
+        Write-Host "AudioMoth protocol v4 ACKed pipe capability: OK"
+      } else {
+        $statusCapabilityOk = $false
+        Write-Host "AudioMoth protocol v4 ACKed pipe capability: MISSING - flash CURRENT_AUDIOMOTH_FLASH\audiomoth.bin and retry."
+      }
     } else {
       $statusCapabilityOk = $false
-      Write-Host "AudioMoth protocol v4 ACKed pipe capability: MISSING - flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
+      Write-Host "AudioMoth STATUS command did not return an OK STATUS line."
     }
   }
 }
