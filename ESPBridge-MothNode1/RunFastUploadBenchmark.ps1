@@ -207,7 +207,7 @@ if ($pipeLines.Count -gt 0) {
 } elseif ($busyStuckHigh) {
   Write-Host "AudioMoth never entered bridge service: MOTH_BUSY stayed high and UART returned zero bytes."
   Write-Host $busyStuckHigh
-  Write-Host "Check AudioMoth is flashed with CURRENT_AUDIOMOTH_FLASH\audiomoth.bin, switched back to CUSTOM/run mode, and PA8/MOTH_BUSY is not shorted high."
+  Write-Host "Check AudioMoth is flashed with CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin, switched back to CUSTOM/run mode, and PA8/MOTH_BUSY is not shorted high."
 } elseif ($noAudioMothUart) {
   Write-Host "AudioMoth UART returned zero bytes while ESP_REQ was asserted."
   Write-Host $noAudioMothUart
@@ -218,11 +218,11 @@ if ($pipeLines.Count -gt 0) {
 } elseif ($pipeStatusMissing) {
   Write-Host "GETPIPE was skipped because the AudioMoth STATUS line lacks protocol v4 ACKed pipe capability fields."
   Write-Host $pipeStatusMissing
-  Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\audiomoth.bin and retry."
+  Write-Host "Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
 } elseif ($pipeCapabilityMismatch) {
   Write-Host "GETPIPE was skipped because ESP32 and AudioMoth disagree on pipe capability."
   Write-Host $pipeCapabilityMismatch
-  Write-Host "The ESP32 expects the stable 115200-baud ACKed pipe. Flash CURRENT_AUDIOMOTH_FLASH\audiomoth.bin and retry."
+  Write-Host "The ESP32 expects the stable 115200-baud ACKed pipe. Flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
 } elseif ($pipeFatal) {
   Write-Host "GETPIPE failed before completion:"
   Write-Host $pipeFatal

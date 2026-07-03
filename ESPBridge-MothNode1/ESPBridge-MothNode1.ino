@@ -146,6 +146,7 @@ bool serverConfirmDeletes(long serverEpoch, const String &authorizationId, Delet
 // Upload.ino
 bool openBridgeSession(long serverEpoch);
 void closeBridgeSession();
+bool bridgeStatusWithUploadHandoff(long serverEpoch, String &statusOut, const char *context);
 UploadOptions defaultUploadOptions();
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced);
 UploadSummary runAudioMothUploadSession(long serverEpoch, bool forced, const UploadOptions &options);

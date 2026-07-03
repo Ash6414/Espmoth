@@ -262,7 +262,7 @@ if ($responseMessage) {
         Write-Host "AudioMoth protocol v4 ACKed pipe capability: OK"
       } else {
         $statusCapabilityOk = $false
-        Write-Host "AudioMoth protocol v4 ACKed pipe capability: MISSING - flash CURRENT_AUDIOMOTH_FLASH\audiomoth.bin and retry."
+        Write-Host "AudioMoth protocol v4 ACKed pipe capability: MISSING - flash CURRENT_AUDIOMOTH_FLASH\\audiomoth.bin and retry."
       }
     } else {
       $statusCapabilityOk = $false

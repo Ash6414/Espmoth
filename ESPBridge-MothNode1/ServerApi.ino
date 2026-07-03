@@ -133,7 +133,7 @@ void pollCommands(long serverEpoch, const PowerState &p) {
       String status;
       bool ok = false;
       if (openBridgeSession(serverEpoch)) {
-        ok = bridgeStatus(status);
+        ok = bridgeStatusWithUploadHandoff(serverEpoch, status, "MOTH_STATUS command");
         closeBridgeSession();
       }
       ackCommand(serverEpoch, id, ok ? status : String("AudioMoth status unavailable"));

@@ -49,6 +49,63 @@ bool bridgeStatusAllowsUpload(const String &status) {
   return status.indexOf("allowed=1") >= 0;
 }
 
+bool handoffBridgeSessionToNextService(long serverEpoch, const char *reason) {
+  Serial.printf("AudioMoth bridge handoff: %s; keeping ESP_REQ asserted for next service window\n", reason);
+
+  bridgeDone();
+  delay(50);
+  bridgeRestoreDefaultBaud();
+
+  if (!bridgeWaitReady(MOTH_READY_TIMEOUT_MS)) {
+    Serial.println("AudioMoth bridge handoff did not reach another READY window");
+    mothRequest(false);
+    return false;
+  }
+
+  if (!bridgePing()) {
+    Serial.println("AudioMoth bridge handoff PING failed");
+    bridgeDone();
+    mothRequest(false);
+    return false;
+  }
+
+  uint32_t epoch = bridgeEpochNow(serverEpoch);
+  if (epoch > 1700000000UL) {
+    bridgeSetTime(epoch, 0);
+  }
+
+  return true;
+}
+
+bool bridgeStatusWithUploadHandoff(long serverEpoch, String &statusOut, const char *context) {
+  statusOut = "";
+
+  bool statusOk = bridgeStatus(statusOut);
+  if (statusOk) {
+    bridgeApplyStatusCapabilities(statusOut);
+    if (bridgeStatusAllowsUpload(statusOut)) return true;
+  }
+
+  Serial.printf("AudioMoth service is not upload-ready during %s: %s\n",
+                context,
+                statusOk ? statusOut.c_str() : "STATUS unavailable");
+
+  if (!handoffBridgeSessionToNextService(serverEpoch, context)) {
+    return statusOk;
+  }
+
+  String handoffStatus;
+  bool handoffStatusOk = bridgeStatus(handoffStatus);
+  if (handoffStatusOk) {
+    statusOut = handoffStatus;
+    bridgeApplyStatusCapabilities(statusOut);
+    return true;
+  }
+
+  Serial.println("AudioMoth STATUS unavailable after handoff");
+  return statusOk;
+}
+
 bool openBridgeUploadSession(long serverEpoch) {
   uint32_t start = millis();
   uint32_t attempt = 0;
@@ -61,8 +118,7 @@ bool openBridgeUploadSession(long serverEpoch) {
     }
 
     String status;
-    bool statusOk = bridgeStatus(status);
-    if (statusOk) bridgeApplyStatusCapabilities(status);
+    bool statusOk = bridgeStatusWithUploadHandoff(serverEpoch, status, "upload open");
     if (statusOk && bridgeStatusAllowsUpload(status)) {
       Serial.printf("AudioMoth file service ready after %lu attempt(s): %s\n",
                     (unsigned long)attempt, status.c_str());
