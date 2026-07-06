@@ -209,11 +209,13 @@ bool saveWifiConfig(const String &wifiSsid,
                     const String &wifiPassword,
                     const String &wifiSecurity,
                     const String &wifiIdentity,
-                    const String &wifiUsername) {
+                    const String &wifiUsername,
+                    const String &baseUrl) {
   String ssid = wifiSsid;
   String securityMode = wifiSecurity;
   String identity = wifiIdentity;
   String username = wifiUsername;
+  String url = normalizeBaseUrl(baseUrl);
   ssid.trim();
   securityMode.trim();
   securityMode.toLowerCase();
@@ -224,8 +226,9 @@ bool saveWifiConfig(const String &wifiSsid,
     securityMode = "personal";
   }
   if (ssid.length() == 0) return false;
+  if (url.length() == 0) return false;
   if (securityMode == "enterprise" && (username.length() == 0 || wifiPassword.length() == 0)) return false;
-  if (gBaseUrl.length() == 0 || gNodeId.length() == 0 || gKeyId.length() == 0 || gDeviceSecret.length() < 32) {
+  if (gNodeId.length() == 0 || gKeyId.length() == 0 || gDeviceSecret.length() < 32) {
     return false;
   }
 
@@ -235,6 +238,7 @@ bool saveWifiConfig(const String &wifiSsid,
   nodePrefs.putString("wifi_sec", securityMode);
   nodePrefs.putString("wifi_ident", identity);
   nodePrefs.putString("wifi_user", username);
+  nodePrefs.putString("base_url", url);
   nodePrefs.end();
 
   gWifiSsid = ssid;
@@ -242,6 +246,7 @@ bool saveWifiConfig(const String &wifiSsid,
   gWifiSecurity = securityMode;
   gWifiIdentity = identity;
   gWifiUsername = username;
+  gBaseUrl = url;
   gNodeConfigReady = true;
   return true;
 }
@@ -302,14 +307,15 @@ String portalPage(const String &message) {
   html += F("body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;background:#f7f7f3;color:#1d1d1b}");
   html += F("main{max-width:760px;margin:auto;padding:24px}section{background:#fff;border:1px solid #ddd;border-radius:8px;padding:18px;margin:14px 0}");
   html += F("label{display:block;font-weight:650;margin-top:12px}input,select{width:100%;box-sizing:border-box;padding:10px;border:1px solid #bbb;border-radius:6px;font-size:16px;background:#fff}");
-  html += F("button{margin-top:16px;padding:11px 14px;border:0;border-radius:6px;background:#145a7a;color:white;font-weight:700;font-size:16px}");
+  html += F("button{margin-top:16px;margin-right:8px;padding:11px 14px;border:0;border-radius:6px;background:#145a7a;color:white;font-weight:700;font-size:16px}");
+  html += F("button.secondary{background:#37633f}");
   html += F(".danger{background:#8d2c20}.msg{padding:12px;border-radius:6px;background:#e9f2ef;border:1px solid #b7d4ca}.hint{color:#555;font-size:14px}.hidden{display:none}summary{font-weight:700;cursor:pointer}</style>");
   html += F("<script>function wifiMode(){var s=document.getElementById('wifi_security');document.getElementById('enterprise_fields').className=s.value==='enterprise'?'':'hidden';}</script></head><body><main>");
   html += F("<h1>Bat Node Setup</h1>");
   if (gNodeConfigReady) {
     html += F("<p class='hint'>Update Wi-Fi for existing node <strong>");
     html += htmlEscape(gNodeId);
-    html += F("</strong>. Its identity and server credentials stay unchanged.</p>");
+    html += F("</strong>. Use <strong>Save Wi-Fi only</strong> for the same server, or <strong>Re-enroll with dashboard</strong> after server history was cleared.</p>");
   } else {
     html += F("<p class='hint'>Connect Wi-Fi, submit this node, then approve it from the Bat Node dashboard. Credentials are saved automatically.</p>");
   }
@@ -319,7 +325,7 @@ String portalPage(const String &message) {
     html += F("</div>");
   }
 
-  html += gNodeConfigReady ? F("<section><h2>Change Wi-Fi</h2>") : F("<section><h2>Connect and enroll</h2>");
+  html += gNodeConfigReady ? F("<section><h2>Change Wi-Fi or re-enroll</h2>") : F("<section><h2>Connect and enroll</h2>");
   html += gNodeConfigReady ? F("<form method='post' action='/wifi'>") : F("<form method='post' action='/enroll'>");
   html += F("<label>Wi-Fi SSID</label><input name='wifi_ssid' value='");
   html += htmlEscape(gWifiSsid);
@@ -337,13 +343,20 @@ String portalPage(const String &message) {
   html += F("'></div><label>Wi-Fi password</label><input name='wifi_password' type='password' value='");
   html += htmlEscape(gWifiPassword);
   html += F("'>");
+  html += F("<label>Public server URL</label><input name='base_url' value='");
+  html += htmlEscape(gBaseUrl.length() ? gBaseUrl : String(DEFAULT_BASE_URL));
+  html += F("' placeholder='https://your-computer.tailnet.ts.net' required>");
+  html += F("<label>Node name</label><input name='node_name' value='");
   if (gNodeConfigReady) {
-    html += F("<button type='submit'>Save Wi-Fi and reconnect</button></form></section>");
+    html += htmlEscape(gNodeId);
+    html += F("'><input type='hidden' name='preferred_node_id' value='");
+    html += htmlEscape(gNodeId);
+    html += F("'>");
+    html += F("<button type='submit' formaction='/wifi'>Save Wi-Fi only</button>");
+    html += F("<button class='secondary' type='submit' formaction='/enroll'>Re-enroll with dashboard</button>");
+    html += F("<p class='hint'>Re-enroll keeps this hardware in setup mode until the dashboard approves it and returns fresh credentials.</p></form></section>");
   } else {
-    html += F("<label>Public server URL</label><input name='base_url' value='");
-    html += htmlEscape(gBaseUrl.length() ? gBaseUrl : String(DEFAULT_BASE_URL));
-    html += F("' placeholder='https://your-computer.tailnet.ts.net' required>");
-    html += F("<label>Node name</label><input name='node_name' value='Bat Node ");
+    html += F("Bat Node ");
     html += suffix;
     html += F("'>");
     html += F("<button type='submit'>Connect and request approval</button></form></section>");
@@ -412,6 +425,7 @@ bool waitForProvisionWiFi(const String &ssid,
 
 bool requestServerEnrollment(const String &baseUrl,
                              const String &nodeName,
+                             const String &preferredNodeId,
                              String &requestIdOut,
                              String &pollTokenOut,
                              String &errorOut) {
@@ -431,6 +445,7 @@ bool requestServerEnrollment(const String &baseUrl,
   StaticJsonDocument<768> doc;
   doc["hardware_uid"] = hardwareUid();
   doc["node_name"] = nodeName;
+  if (preferredNodeId.length()) doc["preferred_node_id"] = preferredNodeId;
   doc["hardware_version"] = "ESP32 AudioMoth bridge";
   doc["firmware_version"] = "Moth_Node_ESPBridge enrollment-v2";
   String body;
@@ -530,6 +545,24 @@ void handlePortalRoot() {
   sendPortalPage("");
 }
 
+void redirectToPortalRoot() {
+  String url = "http://" + WiFi.softAPIP().toString() + "/";
+  provisionServer.sendHeader("Location", url, true);
+  provisionServer.send(302, "text/plain", "Open Bat Node setup: " + url);
+}
+
+void handleCaptivePortalProbe() {
+  redirectToPortalRoot();
+}
+
+void handlePortalNotFound() {
+  if (provisionServer.method() == HTTP_GET) {
+    redirectToPortalRoot();
+    return;
+  }
+  handlePortalRoot();
+}
+
 void handleManualSave() {
   bool ok = saveNodeConfig(
     provisionServer.arg("wifi_ssid"),
@@ -557,6 +590,7 @@ void handleWifiSave() {
   String securityMode = provisionServer.arg("wifi_security");
   String identity = provisionServer.arg("wifi_identity");
   String username = provisionServer.arg("wifi_username");
+  String baseUrl = normalizeBaseUrl(provisionServer.arg("base_url"));
   ssid.trim();
   securityMode.trim();
   securityMode.toLowerCase();
@@ -571,6 +605,14 @@ void handleWifiSave() {
     sendPortalPage("Enter a Wi-Fi network name.");
     return;
   }
+  if (baseUrl.length() == 0) {
+    sendPortalPage("Enter the server URL.");
+    return;
+  }
+  if (baseUrl.indexOf(":8443") > 0) {
+    sendPortalPage("Use the ESP32 server URL without :8443. Port 8443 is only for the private dashboard.");
+    return;
+  }
   if (securityMode == "enterprise" && (username.length() == 0 || password.length() == 0)) {
     sendPortalPage("Enterprise Wi-Fi needs both username and password.");
     return;
@@ -579,7 +621,7 @@ void handleWifiSave() {
     sendPortalPage("Could not connect to that Wi-Fi network. Check the security mode and credentials, then try again.");
     return;
   }
-  if (!saveWifiConfig(ssid, password, securityMode, identity, username)) {
+  if (!saveWifiConfig(ssid, password, securityMode, identity, username, baseUrl)) {
     sendPortalPage("Wi-Fi connected, but the settings could not be saved.");
     return;
   }
@@ -597,12 +639,15 @@ void handleStartEnrollment() {
   String username = provisionServer.arg("wifi_username");
   String baseUrl = normalizeBaseUrl(provisionServer.arg("base_url"));
   String nodeName = provisionServer.arg("node_name");
+  String preferredNodeId = provisionServer.arg("preferred_node_id");
   ssid.trim();
   securityMode.trim();
   securityMode.toLowerCase();
   identity.trim();
   username.trim();
+  preferredNodeId.trim();
   if (nodeName.length() == 0) nodeName = "Bat Node " + chipSuffix();
+  if (preferredNodeId.length() == 0 && gNodeConfigReady) preferredNodeId = gNodeId;
 
   if (ssid.length() == 0 || baseUrl.length() == 0) {
     sendPortalPage("Enrollment needs a Wi-Fi SSID and public server URL.");
@@ -629,7 +674,7 @@ void handleStartEnrollment() {
   String requestId;
   String pollToken;
   String error;
-  if (!requestServerEnrollment(baseUrl, nodeName, requestId, pollToken, error)) {
+  if (!requestServerEnrollment(baseUrl, nodeName, preferredNodeId, requestId, pollToken, error)) {
     sendPortalPage(error);
     return;
   }
@@ -733,12 +778,19 @@ void runProvisioningPortal(bool recoveryMode) {
   provisionDnsServer.start(53, "*", WiFi.softAPIP());
 
   provisionServer.on("/", HTTP_GET, handlePortalRoot);
+  provisionServer.on("/generate_204", HTTP_GET, handleCaptivePortalProbe);
+  provisionServer.on("/gen_204", HTTP_GET, handleCaptivePortalProbe);
+  provisionServer.on("/hotspot-detect.html", HTTP_GET, handleCaptivePortalProbe);
+  provisionServer.on("/library/test/success.html", HTTP_GET, handleCaptivePortalProbe);
+  provisionServer.on("/connecttest.txt", HTTP_GET, handleCaptivePortalProbe);
+  provisionServer.on("/ncsi.txt", HTTP_GET, handleCaptivePortalProbe);
+  provisionServer.on("/fwlink", HTTP_GET, handleCaptivePortalProbe);
   provisionServer.on("/wifi", HTTP_POST, handleWifiSave);
   provisionServer.on("/save", HTTP_POST, handleManualSave);
   provisionServer.on("/enroll", HTTP_POST, handleStartEnrollment);
   provisionServer.on("/enrollment-status", HTTP_GET, handleEnrollmentStatus);
   provisionServer.on("/clear", HTTP_POST, handleClearConfig);
-  provisionServer.onNotFound(handlePortalRoot);
+  provisionServer.onNotFound(handlePortalNotFound);
   provisionServer.begin();
 
   uint32_t start = millis();

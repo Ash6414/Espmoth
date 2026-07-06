@@ -91,9 +91,14 @@ If a configured node cannot join its saved Wi-Fi, it automatically opens the
 same `BatNode-XXXXXX` access point for ten minutes. Join it with the password
 `batnode-setup`; the captive setup page should open automatically, with
 `http://192.168.4.1` as the manual fallback. Enter the replacement personal,
-enterprise, or open-network settings and press **Save Wi-Fi and reconnect**.
-This Wi-Fi-only path preserves the node ID, server URL, key, device secret, and
-dashboard history. It does not require another approval or firmware flash.
+enterprise, or open-network settings. Press **Save Wi-Fi only** when the server
+still has this node's credentials and history. This Wi-Fi-only path preserves
+the node ID, server URL, key, device secret, and dashboard history.
+
+If server history or credentials were cleared, use **Re-enroll with dashboard**
+instead. The ESP32 submits a fresh enrollment request while asking the server to
+reuse its current `BATNODE_...` identity. Approve the request under **Add
+Nodes**; the node saves the new key and device secret automatically.
 
 The server links the ESP32 eFuse hardware ID to its node record. When settings
 are erased or firmware is reflashed, approving the same hardware preserves its
@@ -106,8 +111,10 @@ For internet deployments, use the stable HTTPS URL printed by the server's
 bench testing on a trusted local network.
 
 To open setup while the current network still works, send the `OPEN_SETUP`
-dashboard command. Erasing NVS is reserved for intentionally removing the node
-identity and starting enrollment again.
+dashboard command. The setup access point uses DNS redirects and common
+Android, iOS, and Windows connectivity-check URLs to open as a captive portal;
+`http://192.168.4.1` remains the manual fallback. Erasing NVS is reserved for
+intentionally removing the node identity and starting enrollment again.
 
 ## Server endpoints needed for WAV upload
 
