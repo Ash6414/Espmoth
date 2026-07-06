@@ -1,5 +1,5 @@
 param(
-  [string]$Port = "COM7",
+  [string]$Port = "COM9",
   [int]$Baud = 115200,
   [string]$NodeId = "AUTO",
   [int]$MonitorSeconds = 420

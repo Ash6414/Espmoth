@@ -1,5 +1,5 @@
 param(
-  [string]$Port = "COM7",
+  [string]$Port = "COM9",
   [int]$Baud = 115200,
   [string]$NodeId = "AUTO",
   [int]$MonitorSeconds = 180,
@@ -133,7 +133,7 @@ try {
   $portObj.Open()
   Start-Sleep -Milliseconds 100
 
-  # Reset ESP32 via the same DTR/RTS sequence used by the manual COM7 tests.
+  # Reset ESP32 via the same DTR/RTS sequence used by the manual serial tests.
   $portObj.DtrEnable = $false
   $portObj.RtsEnable = $true
   Start-Sleep -Milliseconds 100

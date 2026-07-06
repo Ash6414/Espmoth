@@ -54,7 +54,7 @@ The ESP32 UART setup must leave GPIO32/GPIO33 owned by `Serial2` after `Serial2.
 
 ## Arduino setup
 
-1. Open the `Moth_Node_ESPBridge` folder in Arduino IDE.
+1. Open the `ESPBridge-MothNode1` folder in Arduino IDE.
 2. Select `ESP32 Dev Module`.
 3. Install `ArduinoJson`.
 4. Upload the same sketch to every ESP32.
@@ -62,8 +62,8 @@ The ESP32 UART setup must leave GPIO32/GPIO33 owned by `Serial2` after `Serial2.
 Arduino CLI equivalents:
 
 ```powershell
-arduino-cli compile --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
-arduino-cli upload -p COM7 --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
+arduino-cli compile --fqbn esp32:esp32:esp32 ".\ESPBridge-MothNode1"
+arduino-cli upload -p COM9 --fqbn esp32:esp32:esp32 ".\ESPBridge-MothNode1"
 ```
 
 ## Setup and field Wi-Fi recovery
@@ -120,9 +120,9 @@ GET  /v1/device/{NODE_ID}/commands
 POST /v1/device/{NODE_ID}/commands/{id}/ack
 ```
 
-The ESP32 asserts ESP_REQ before attempting the UART bridge. That order matters because AudioMoth opens the UART bridge only after seeing the request pin. MOTH_BUSY is treated as an advisory pin and is read with the ESP32 internal pulldown enabled: the ESP32 waits briefly for it to fall, logs a warning if it stays high, then still listens for `OK BRIDGE_READY` and probes with `PING` for up to about 65 seconds. This keeps a noisy or stuck BUSY line from blocking a working UART bridge.
+The ESP32 asserts ESP_REQ before attempting the UART bridge. Current AudioMoth firmware keeps the older working logical request fallback because field logs show PA7 can read low on the AudioMoth side (`req=1 req_pin=0`) even when the ESP32 is asserting GPIO25. MOTH_BUSY is treated as an advisory pin and is read with the ESP32 internal pulldown enabled: the ESP32 waits briefly for it to fall, logs a warning if it stays high, then still listens for `OK BRIDGE_READY` and probes with `PING` for up to about 65 seconds. This keeps a noisy or stuck BUSY line from blocking a working UART bridge.
 
-`MOTH_ASSERT_REQ_AT_BOOT` is enabled so ESP_REQ goes high as soon as the ESP32 bridge pins are initialised. This gives the AudioMoth startup request-service firmware a chance to open UART before the ESP32 has finished Wi-Fi, server time sync, and command polling. The pin is driven low again before ESP32 deep sleep.
+`MOTH_ASSERT_REQ_AT_BOOT` is enabled so ESP_REQ goes high as soon as the ESP32 bridge pins are initialised. This gives the AudioMoth startup bridge service a chance to open UART before the ESP32 has finished Wi-Fi, server time sync, and command polling. The pin is driven low again before ESP32 deep sleep.
 
 Upload/delete endpoints this ESP firmware expects from the current MothServer:
 
@@ -195,7 +195,7 @@ sense wire.
 
 ## One-command bridge test
 
-After flashing the request-service AudioMoth bin and putting AudioMoth back in CUSTOM/run mode, run:
+After flashing the current AudioMoth bin and putting AudioMoth back in CUSTOM/run mode, run:
 
 ```bat
 RunBridgeStatusTest.cmd
@@ -204,10 +204,10 @@ RunBridgeStatusTest.cmd
 Or run the PowerShell script directly with a process-local execution-policy bypass:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\RunBridgeStatusTest.ps1 -Port COM7 -MonitorSeconds 180
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\RunBridgeStatusTest.ps1 -Port COM9 -MonitorSeconds 180
 ```
 
-The script queues a `MOTH_STATUS` command in the local MothServer SQLite database, resets the ESP32 on COM7, monitors serial at 115200, and writes a log under `logs/`.
+The script queues a `MOTH_STATUS` command in the local MothServer SQLite database, resets the ESP32 on the selected COM port, monitors serial at 115200, and writes a log under `logs/`.
 
 Expected pass signal:
 
@@ -215,7 +215,7 @@ Expected pass signal:
 Bridge READY after ...
 ```
 
-If it prints `rx_bytes=0`, `busy_low_seen=0`, and `esp_req=1`, the ESP32 is asserting the request pin and sending UART pings but AudioMoth is not replying. In that case, check that AudioMoth is flashed with the request-service bin and is actually running in CUSTOM mode.
+If it prints `rx_bytes=0` and `esp_req=1`, the ESP32 is asserting the request pin and sending UART pings but AudioMoth is not replying. In that case, check that AudioMoth is flashed with the current bin, is actually running in CUSTOM mode, and still shares ground/TX/RX with the ESP32.
 
 ## Fast UART benchmark
 
@@ -246,7 +246,7 @@ run:
 RunFastUploadBenchmark.cmd
 ```
 
-The benchmark queues `UPLOAD_NOW`, resets COM7, and records the negotiated UART
+The benchmark queues `UPLOAD_NOW`, resets the selected COM port, and records the negotiated UART
 rate plus separate UART, server, and end-to-end throughput. By default it asks
 the ESP32 to upload one smallest listed file between 1 KB and 20 MB, which keeps
 bench runs from starting with a huge unattended recording. Use `-FullSession` to
