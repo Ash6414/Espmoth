@@ -50,11 +50,11 @@ Disable GPS time setting in the AudioMoth configuration. This firmware does not 
 TIME <unix_seconds> <milliseconds>
 ```
 
-The ESP32 UART setup must leave GPIO32/GPIO33 owned by `Serial2` after `Serial2.begin(...)`. Do not call `pinMode()` on either UART pin after `begin()`, or the ESP32 pin matrix can detach RX2 and the bridge will see GPIO edges but decode zero UART bytes.
+The ESP32 UART setup must leave the active `Serial2` pins owned by `Serial2` after `Serial2.begin(...)`. Do not call `pinMode()` on the UART pins after `begin()`, or the ESP32 pin matrix can detach RX2 and the bridge will see GPIO edges but decode zero UART bytes.
 
 ## Arduino setup
 
-1. Open the `ESPBridge-MothNode1` folder in Arduino IDE.
+1. Open the `Moth_Node_ESPBridge` folder in Arduino IDE.
 2. Select `ESP32 Dev Module`.
 3. Install `ArduinoJson`.
 4. Upload the same sketch to every ESP32.
@@ -62,8 +62,8 @@ The ESP32 UART setup must leave GPIO32/GPIO33 owned by `Serial2` after `Serial2.
 Arduino CLI equivalents:
 
 ```powershell
-arduino-cli compile --fqbn esp32:esp32:esp32 ".\ESPBridge-MothNode1"
-arduino-cli upload -p COM9 --fqbn esp32:esp32:esp32 ".\ESPBridge-MothNode1"
+arduino-cli compile --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
+arduino-cli upload -p COM9 --fqbn esp32:esp32:esp32 ".\Moth_Node_ESPBridge"
 ```
 
 ## Setup and field Wi-Fi recovery
@@ -156,21 +156,15 @@ CRC32-checked 2 KiB pieces. The ESP ACKs each validated frame;
 AudioMoth resends a frame on NAK or ACK timeout. After each validated block,
 AudioMoth waits inside the same command for `NEXT <offset>`; the ESP only sends
 `NEXT` after the server accepts the previous PUT. This avoids per-block file
-reopen/command overhead without paying the penalty of failed high-speed baud
+reopen/command overhead without paying the penalty of failed baud-switch
 attempts.
-For bench testing without a recording on the SD card, `MOTH_TEST_STREAM` asks
-AudioMoth to send a deterministic 1 MiB max stream. The diagnostic probes
-921600 first, then falls back to 460800 and 230400, reporting the highest
-CRC-checked command-stable rate. Those rates are bench diagnostics; production
-upload remains on the 115200 ACKed pipe.
 
 Production upload requires protocol v4 `GETPIPE`. If the AudioMoth firmware
 does not report matching ACKed pipe capability, the ESP fails loudly instead of
 silently crawling through the old 115200-baud `GET` path. For recovery work,
 `MOTH_ALLOW_115200_GET_FALLBACK` can be set to `1` in `Config.h`; the default
-field build keeps that slow path disabled. Whole-session high baud remains
-disabled because ESP-to-AudioMoth commands are kept deliberately slow and
-recoverable. The ESP USB debug console also uses 115200 baud.
+field build keeps that slow path disabled. The ESP USB debug console also uses
+115200 baud.
 
 ## Command types supported
 
@@ -180,7 +174,6 @@ UPLOAD_NOW
 SYNC_MOTH_TIME
 MOTH_STATUS
 MOTH_LIST
-MOTH_TEST_STREAM
 OPEN_SETUP
 ```
 
@@ -190,7 +183,6 @@ sense line. During transfer, a valid low battery reading still stops the upload
 at `MIN_ACTIVE_BATTERY_V`; impossible sub-1 V readings are treated as an absent
 sense wire.
 `MOTH_LIST` returns SD free/total size and a short file preview.
-`MOTH_TEST_STREAM` measures the fast AudioMoth-to-ESP UART path without reading SD.
 `OPEN_SETUP` preserves the current node identity and restarts once into the local setup portal so Wi-Fi or server URL can be changed.
 
 ## One-command bridge test
@@ -217,26 +209,6 @@ Bridge READY after ...
 
 If it prints `rx_bytes=0` and `esp_req=1`, the ESP32 is asserting the request pin and sending UART pings but AudioMoth is not replying. In that case, check that AudioMoth is flashed with the current bin, is actually running in CUSTOM mode, and still shares ground/TX/RX with the ESP32.
 
-## Fast UART benchmark
-
-After flashing the matching AudioMoth bin with `TESTSTREAM`, run:
-
-```bat
-RunFastUartBenchmark.cmd
-```
-
-Or run it directly on the current ESP port:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\RunFastUartBenchmark.ps1 -Port COM9 -MonitorSeconds 180
-```
-
-The benchmark queues `MOTH_TEST_STREAM`, resets the ESP32, and validates a
-deterministic 1 MiB AudioMoth-to-ESP stream by trying 921600, 460800, then
-230400 baud. It reports the highest CRC-checked diagnostic UART rate and exits with
-a clear unsupported-firmware message if AudioMoth has not been flashed with the
-`TESTSTREAM` bin yet.
-
 ## Upload throughput benchmark
 
 After placing at least one not-yet-uploaded recording on the AudioMoth SD card,
@@ -246,8 +218,8 @@ run:
 RunFastUploadBenchmark.cmd
 ```
 
-The benchmark queues `UPLOAD_NOW`, resets the selected COM port, and records the negotiated UART
-rate plus separate UART, server, and end-to-end throughput. By default it asks
-the ESP32 to upload one smallest listed file between 1 KB and 20 MB, which keeps
-bench runs from starting with a huge unattended recording. Use `-FullSession` to
+The benchmark queues `UPLOAD_NOW`, resets the selected COM port, and records
+separate UART, server, and end-to-end throughput. By default it asks the ESP32
+to upload one smallest listed file between 1 KB and 20 MB, which keeps bench
+runs from starting with a huge unattended recording. Use `-FullSession` to
 upload every listed file instead. Logs are written to `logs/fast-upload-*.log`.

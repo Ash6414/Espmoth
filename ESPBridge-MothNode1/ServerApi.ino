@@ -139,8 +139,6 @@ void pollCommands(long serverEpoch, const PowerState &p) {
       ackCommand(serverEpoch, id, ok ? status : String("AudioMoth status unavailable"));
     } else if (type == "MOTH_LIST") {
       ackCommand(serverEpoch, id, runAudioMothListDiagnostic(serverEpoch));
-    } else if (type == "MOTH_TEST_STREAM") {
-      ackCommand(serverEpoch, id, runAudioMothTestStreamDiagnostic(serverEpoch));
     } else if (type == "OPEN_SETUP") {
       ackCommand(serverEpoch, id, "Restarting into Bat Node setup portal");
       requestProvisioningOnNextBoot();

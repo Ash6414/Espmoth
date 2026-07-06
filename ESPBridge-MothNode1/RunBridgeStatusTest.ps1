@@ -149,11 +149,7 @@ try {
       $lines.Add($clean)
       Write-Host $clean
 
-      if ($clean -like "*TESTSTREAM*failed*" -or
-          $clean -like "*TESTSTREAM*timeout*" -or
-          $clean -like "*TESTSTREAM*CRC mismatch*" -or
-          $clean -like "*TESTSTREAM*unknown_command*" -or
-          $clean -like "USB_DEBUG_MOTH_LIST FAIL*") {
+      if ($clean -like "USB_DEBUG_MOTH_LIST FAIL*") {
         $commandError = $true
       }
 

@@ -230,7 +230,7 @@ if ($pipeLines.Count -gt 0) {
   Write-Host "Legacy 115200-baud GET path emitted a failure; production upload requires GETPIPE."
   Write-Host ($getLines | Select-Object -First 1)
 } else {
-  Write-Host "No fast UART mode was observed."
+  Write-Host "No completed GETPIPE upload was observed."
 }
 if ($results) {
   $results | ForEach-Object { Write-Host $_ }

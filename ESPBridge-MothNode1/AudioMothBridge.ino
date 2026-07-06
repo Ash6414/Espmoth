@@ -183,12 +183,6 @@ bool bridgeReadExpectedLineIgnoringNoise(const char *expectedPrefix, String &lin
   return false;
 }
 
-void bridgeReturnToDefaultAfterStream() {
-  MothSerial.updateBaudRate(MOTH_UART_BAUD);
-  bridgeCurrentBaud = MOTH_UART_BAUD;
-  delay(20);
-}
-
 bool bridgeProbeDefaultControl(const char *context) {
   String lastLine;
   bool sawLine = false;
@@ -223,6 +217,7 @@ bool bridgeWaitReady(uint32_t timeoutMs) {
   uint32_t start = millis();
   uint32_t lastPingMs = 0;
   uint32_t pingsSent = 0;
+  uint32_t unexpectedLines = 0;
   bool busyLowSeen = !mothBusy();
 
   while (millis() - start < timeoutMs) {
@@ -251,6 +246,12 @@ bool bridgeWaitReady(uint32_t timeoutMs) {
                       digitalRead(PIN_MOTH_REQ));
         return false;
       }
+      unexpectedLines += 1;
+      if (unexpectedLines <= 8) {
+        Serial.printf("Bridge READY ignored line %lu: '%s'\n",
+                      (unsigned long)unexpectedLines,
+                      line.c_str());
+      }
     }
 
     uint32_t elapsed = millis() - start;
@@ -261,11 +262,12 @@ bool bridgeWaitReady(uint32_t timeoutMs) {
     }
   }
 
-  Serial.printf("Bridge READY timeout after %lu ms; pings=%lu rx_bytes=%lu rx_lines=%lu busy_low_seen=%d busy_now=%d esp_req=%d\n",
+  Serial.printf("Bridge READY timeout after %lu ms; pings=%lu rx_bytes=%lu rx_lines=%lu unexpected_lines=%lu busy_low_seen=%d busy_now=%d esp_req=%d\n",
                 (unsigned long)(millis() - start),
                 (unsigned long)pingsSent,
                 (unsigned long)bridgeRawBytesRead,
                 (unsigned long)bridgeLinesRead,
+                (unsigned long)unexpectedLines,
                 busyLowSeen ? 1 : 0,
                 mothBusy() ? 1 : 0,
                 digitalRead(PIN_MOTH_REQ));
@@ -284,11 +286,42 @@ bool bridgeExpectResponse(const String &cmd, const char *expectedPrefix, String 
 }
 
 bool bridgePing() {
+  String lastLine;
+  bool sawLine = false;
+  bool sawReadyBeacon = false;
+
   for (uint8_t attempt = 1; attempt <= 4; attempt++) {
     bridgeSendLine("PING");
-    String line;
-    if (bridgeReadExpectedLine("OK PONG", line, 1000)) return true;
+    uint32_t start = millis();
+    while (millis() - start < 1200) {
+      String line;
+      uint32_t remaining = 1200 - (millis() - start);
+      uint32_t slice = remaining > 400 ? 400 : remaining;
+      if (slice == 0) break;
+      if (!bridgeReadLine(line, slice)) continue;
+
+      sawLine = true;
+      lastLine = line;
+      if (line == "OK PONG" || line.startsWith("OK PONG ")) return true;
+      if (line == "OK BRIDGE_READY") {
+        sawReadyBeacon = true;
+        continue;
+      }
+      if (line.startsWith("ERR") || line == "OK BRIDGE_SLEEP") break;
+    }
     delay(75);
+  }
+
+  if (sawLine) {
+    Serial.printf("AudioMoth PING failed after rx_bytes=%lu rx_lines=%lu; last_line='%s'%s\n",
+                  (unsigned long)bridgeRawBytesRead,
+                  (unsigned long)bridgeLinesRead,
+                  lastLine.c_str(),
+                  sawReadyBeacon ? " ready_beacons_seen=1" : "");
+  } else {
+    Serial.printf("AudioMoth PING failed with zero UART lines after READY; rx_bytes=%lu rx_lines=%lu\n",
+                  (unsigned long)bridgeRawBytesRead,
+                  (unsigned long)bridgeLinesRead);
   }
   return false;
 }
@@ -323,7 +356,7 @@ void bridgeApplyStatusCapabilities(const String &status) {
   unsigned long protocol = 0;
   bool hasProtocol = bridgeStatusFieldUInt(status, "proto", protocol);
 
-#if MOTH_PIPE_FAST_ENABLED
+#if MOTH_PIPE_ENABLED
   unsigned long pipe = 0;
   unsigned long pipeBaud = 0;
   unsigned long pipeBytes = 0;
@@ -337,14 +370,14 @@ void bridgeApplyStatusCapabilities(const String &status) {
 
   if (!hasProtocol || protocol < 4 || !hasPipe || !hasPipeBaud || !hasPipeBytes || !hasPipeFrame || !hasPipeAck) {
     if (bridgePipeStreamSupported) {
-      Serial.println("AudioMoth STATUS lacks protocol v4 ACKed pipe fields; high-speed upload requires the current v4 AudioMoth bin");
+      Serial.println("AudioMoth STATUS lacks protocol v4 ACKed pipe fields; upload requires the current v4 AudioMoth bin");
     }
     bridgePipeStreamSupported = false;
-  } else if (pipe != 1 || pipeBaud != MOTH_PIPE_FAST_BAUD || pipeBytes < SERVER_UPLOAD_CHUNK_BYTES ||
+  } else if (pipe != 1 || pipeBaud != MOTH_PIPE_BAUD || pipeBytes < SERVER_UPLOAD_CHUNK_BYTES ||
              pipeFrame == 0 || pipeFrame > MOTH_CHUNK_BYTES || pipeAck != 1) {
     Serial.printf("AudioMoth pipe capability mismatch: proto=%lu pipe=%lu pipe_baud=%lu pipe_bytes=%lu pipe_frame=%lu pipe_ack=%lu expected_baud=%u expected_bytes=%u expected_frame<=%u\n",
                   protocol, pipe, pipeBaud, pipeBytes, pipeFrame, pipeAck,
-                  MOTH_PIPE_FAST_BAUD, SERVER_UPLOAD_CHUNK_BYTES, MOTH_CHUNK_BYTES);
+                  MOTH_PIPE_BAUD, SERVER_UPLOAD_CHUNK_BYTES, MOTH_CHUNK_BYTES);
     bridgePipeStreamSupported = false;
   } else {
     bridgePipeStreamSupported = true;
@@ -504,141 +537,6 @@ uint32_t bridgeReadUInt32LE(const uint8_t *data) {
          ((uint32_t)data[3] << 24);
 }
 
-bool bridgeRunTestStream(uint32_t requestedBytes, uint32_t baud, uint32_t &receivedOut, uint32_t &elapsedMsOut, uint32_t &crcOut) {
-  receivedOut = 0;
-  elapsedMsOut = 0;
-  crcOut = 0;
-
-  if (requestedBytes == 0) requestedBytes = MOTH_TEST_STREAM_BYTES;
-  if (requestedBytes > MOTH_TEST_STREAM_BYTES) requestedBytes = MOTH_TEST_STREAM_BYTES;
-  if (baud == 0) baud = MOTH_STREAM_TEST_BAUD_3;
-  if (baud == MOTH_UART_BAUD) return false;
-  if (bridgeCurrentBaud != MOTH_UART_BAUD) {
-    return false;
-  }
-
-  bridgeFlushInput();
-  bridgeSendLine("TESTSTREAM " + String(requestedBytes) + " " + String(baud));
-
-  String line;
-  if (!bridgeReadExpectedLine("TESTSTREAM ", line, MOTH_DATA_HEADER_TIMEOUT_MS) || !line.startsWith("TESTSTREAM ")) {
-    if (line.length()) {
-      Serial.printf("TESTSTREAM header failed: %s\n", line.c_str());
-    } else {
-      Serial.println("TESTSTREAM header timed out");
-    }
-    bridgeFlushInput();
-    return false;
-  }
-
-  unsigned long streamLength = 0;
-  unsigned int frameMax = 0;
-  unsigned long streamBaud = 0;
-  if (sscanf(line.c_str(), "TESTSTREAM %lu %u %lu", &streamLength, &frameMax, &streamBaud) != 3) {
-    Serial.printf("TESTSTREAM malformed header: %s\n", line.c_str());
-    return false;
-  }
-  if (streamLength == 0 || streamLength > requestedBytes || frameMax == 0 ||
-      frameMax > MOTH_CHUNK_BYTES || streamBaud != baud) {
-    Serial.printf("TESTSTREAM header mismatch: %s\n", line.c_str());
-    return false;
-  }
-
-  uint32_t startMs = millis();
-  MothSerial.updateBaudRate(baud);
-
-  static const uint8_t streamMagic[] = {0xA5, 0x5A, 0xD7, 0x7D};
-  uint8_t frameHeader[14];
-  uint32_t received = 0;
-  uint32_t combinedCrc = 0;
-
-  while (received < streamLength) {
-    if (!bridgeReadMagic(streamMagic, sizeof(streamMagic), MOTH_STREAM_FRAME_TIMEOUT_MS)) {
-      Serial.printf("TESTSTREAM frame magic timeout received %lu/%lu\n",
-                    (unsigned long)received, (unsigned long)streamLength);
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    if (!bridgeReadBytes(frameHeader, sizeof(frameHeader), MOTH_STREAM_FRAME_TIMEOUT_MS)) {
-      Serial.printf("TESTSTREAM frame header timeout received %lu/%lu\n",
-                    (unsigned long)received, (unsigned long)streamLength);
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    uint32_t frameOffset = bridgeReadUInt32LE(frameHeader);
-    uint16_t frameLength = bridgeReadUInt16LE(frameHeader + 4);
-    uint32_t frameCrc = bridgeReadUInt32LE(frameHeader + 6);
-    if (frameOffset != received || frameLength == 0 || frameLength > frameMax || received + frameLength > streamLength) {
-      Serial.printf("TESTSTREAM metadata mismatch: frame_offset=%lu expected=%lu len=%u total=%lu\n",
-                    (unsigned long)frameOffset, (unsigned long)received, frameLength,
-                    (unsigned long)streamLength);
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    if (!bridgeReadBytes(mothChunk, frameLength, MOTH_BINARY_TIMEOUT_MS)) {
-      Serial.printf("TESTSTREAM payload timeout at offset %lu length %u\n",
-                    (unsigned long)frameOffset, frameLength);
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    uint32_t localCrc = crc32Update(0, mothChunk, frameLength);
-    if (localCrc != frameCrc) {
-      Serial.printf("TESTSTREAM CRC mismatch at offset %lu: local=%08lX moth=%08lX\n",
-                    (unsigned long)frameOffset, (unsigned long)localCrc, (unsigned long)frameCrc);
-      bridgeRestartUart(MOTH_UART_BAUD, true);
-      return false;
-    }
-
-    uint16_t headSamples = frameLength < 8 ? frameLength : 8;
-    for (uint16_t i = 0; i < headSamples; i += 1) {
-      uint8_t expected = (uint8_t)((frameOffset + i) & 0xFFU);
-      if (mothChunk[i] != expected) {
-        Serial.printf("TESTSTREAM payload pattern mismatch at offset %lu: got=%u expected=%u\n",
-                      (unsigned long)(frameOffset + i), mothChunk[i], expected);
-        bridgeRestartUart(MOTH_UART_BAUD, true);
-        return false;
-      }
-    }
-    uint16_t tailStart = frameLength > 16 ? frameLength - 8 : headSamples;
-    for (uint16_t i = tailStart; i < frameLength; i += 1) {
-      uint8_t expected = (uint8_t)((frameOffset + i) & 0xFFU);
-      if (mothChunk[i] != expected) {
-        Serial.printf("TESTSTREAM payload pattern mismatch at offset %lu: got=%u expected=%u\n",
-                      (unsigned long)(frameOffset + i), mothChunk[i], expected);
-        bridgeRestartUart(MOTH_UART_BAUD, true);
-        return false;
-      }
-    }
-
-    combinedCrc = crc32Update(combinedCrc, mothChunk, frameLength);
-    received += frameLength;
-  }
-
-  bridgeReturnToDefaultAfterStream();
-  elapsedMsOut = millis() - startMs;
-
-  String doneLine;
-  if (!bridgeReadExpectedLine("OK TESTSTREAM", doneLine, 150)) {
-    if (doneLine.startsWith("ERR") || doneLine == "OK BRIDGE_SLEEP") {
-      Serial.printf("TESTSTREAM completion error: %s\n", doneLine.c_str());
-      return false;
-    }
-    Serial.printf("TESTSTREAM completion not observed; validated %lu bytes by frame CRC\n",
-                  (unsigned long)received);
-  }
-  if (!bridgeProbeDefaultControl("TESTSTREAM")) {
-    return false;
-  }
-
-  receivedOut = received;
-  crcOut = combinedCrc;
-  return received == streamLength;
-}
-
 bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t requestedBytes, PipeSession &pipe, bool &unsupportedOut) {
   pipe.active = false;
   pipe.path = path;
@@ -650,7 +548,7 @@ bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t request
   pipe.baud = 0;
   unsupportedOut = false;
 
-#if !MOTH_PIPE_FAST_ENABLED
+#if !MOTH_PIPE_ENABLED
   return false;
 #endif
 
@@ -666,7 +564,7 @@ bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t request
   }
 
   bridgeDrainInputQuiet(25, 250);
-  bridgeSendLine("GETPIPE " + path + " " + String(offset) + " " + String(requestedBytes) + " " + String(MOTH_PIPE_FAST_BAUD));
+  bridgeSendLine("GETPIPE " + path + " " + String(offset) + " " + String(requestedBytes) + " " + String(MOTH_PIPE_BAUD));
 
   String line;
   if (!bridgeReadExpectedLineIgnoringNoise("PIPE ", line, MOTH_DATA_HEADER_TIMEOUT_MS) || !line.startsWith("PIPE ")) {
@@ -696,7 +594,7 @@ bool bridgeStartPipeStream(const String &path, uint32_t offset, uint32_t request
   }
   if (String(parsedPath) != path || parsedOffset != offset || totalBytes == 0 ||
       totalBytes > requestedBytes || blockMax == 0 ||
-      frameMax == 0 || frameMax > MOTH_CHUNK_BYTES || pipeBaud != MOTH_PIPE_FAST_BAUD) {
+      frameMax == 0 || frameMax > MOTH_CHUNK_BYTES || pipeBaud != MOTH_PIPE_BAUD) {
     Serial.printf("GETPIPE header mismatch: %s\n", line.c_str());
     return false;
   }
@@ -729,14 +627,14 @@ bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, 
   doneOut = false;
   fatalOut = false;
 
-#if !MOTH_PIPE_FAST_ENABLED
+#if !MOTH_PIPE_ENABLED
   return false;
 #endif
 
   if (!pipe.active || !dest || pipe.receivedBytes >= pipe.totalBytes ||
       pipe.blockMaxBytes == 0 ||
       pipe.frameMaxBytes == 0 || pipe.frameMaxBytes > MOTH_CHUNK_BYTES ||
-      pipe.baud != MOTH_PIPE_FAST_BAUD) {
+      pipe.baud != MOTH_PIPE_BAUD) {
     return false;
   }
 
@@ -748,9 +646,6 @@ bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, 
                   (unsigned long)blockTarget, SERVER_UPLOAD_CHUNK_BYTES);
     return false;
   }
-
-  MothSerial.updateBaudRate(pipe.baud);
-  bridgeCurrentBaud = pipe.baud;
 
   static const uint8_t streamMagic[] = {0xA5, 0x5A, 0xD7, 0x7D};
   uint8_t frameHeader[14];
@@ -815,7 +710,6 @@ bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, 
     if (!accepted) {
       Serial.printf("GETPIPE frame failed after retries at offset %lu\n", (unsigned long)expectedOffset);
       fatalOut = true;
-      bridgeRestartUart(MOTH_UART_BAUD, true);
       return false;
     }
 
@@ -823,8 +717,6 @@ bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, 
     totalSdReadMs += acceptedSdMs;
     received += acceptedLength;
   }
-
-  bridgeReturnToDefaultAfterStream();
 
   String blockLine;
   if (!bridgeReadExpectedLine("OK PIPEBLOCK", blockLine, 2500)) {
@@ -875,7 +767,7 @@ bool bridgeReadPipeBlock(PipeSession &pipe, uint8_t *dest, ChunkResult &result, 
 }
 
 bool bridgeContinuePipeStream(const PipeSession &pipe) {
-#if !MOTH_PIPE_FAST_ENABLED
+#if !MOTH_PIPE_ENABLED
   return false;
 #endif
   if (!pipe.active || pipe.receivedBytes >= pipe.totalBytes) return false;
@@ -885,10 +777,7 @@ bool bridgeContinuePipeStream(const PipeSession &pipe) {
 }
 
 void bridgeStopPipeStream() {
-#if MOTH_PIPE_FAST_ENABLED
-  if (bridgeCurrentBaud != MOTH_UART_BAUD) {
-    bridgeRestartUart(MOTH_UART_BAUD, true);
-  }
+#if MOTH_PIPE_ENABLED
   bridgeSendLine("STOP");
   String line;
   bridgeReadExpectedLine("OK PIPESTOP", line, 500);
