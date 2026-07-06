@@ -23,6 +23,31 @@ $pythonCandidates = @(
 $pythonPath = $null
 $logDir = Join-Path $sketchDir "logs"
 
+function Assert-SerialPortReady {
+  param(
+    [string]$PortName,
+    [int]$BaudRate
+  )
+
+  $availablePorts = [System.IO.Ports.SerialPort]::GetPortNames() | Sort-Object
+  if ($availablePorts -notcontains $PortName) {
+    $availableText = if ($availablePorts.Count -gt 0) { $availablePorts -join ", " } else { "none" }
+    throw "Serial port $PortName was not found. Available ports: $availableText. Replug the ESP32 or pass -Port with the visible COM port."
+  }
+
+  $probe = [System.IO.Ports.SerialPort]::new($PortName, $BaudRate, [System.IO.Ports.Parity]::None, 8, [System.IO.Ports.StopBits]::One)
+  $probe.ReadTimeout = 250
+  $probe.DtrEnable = $false
+  $probe.RtsEnable = $false
+  try {
+    $probe.Open()
+  } catch {
+    throw "Serial port $PortName exists but could not be opened. Close Arduino Serial Monitor, flashing tools, or other programs using it. $($_.Exception.Message)"
+  } finally {
+    if ($probe.IsOpen) { $probe.Close() }
+  }
+}
+
 if (!(Test-Path -LiteralPath $dbPath)) { throw "Server database not found: $dbPath" }
 foreach ($candidate in $pythonCandidates) {
   try {
@@ -36,6 +61,7 @@ foreach ($candidate in $pythonCandidates) {
 }
 
 if (!$pythonPath) { throw "No usable Python runtime found for queuing upload commands" }
+Assert-SerialPortReady -PortName $Port -BaudRate $Baud
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"

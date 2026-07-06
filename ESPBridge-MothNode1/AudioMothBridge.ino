@@ -66,8 +66,14 @@ void bridgeSendLine(const String &line) {
   Serial.print("MOTH << ");
   Serial.println(line);
 #endif
-  MothSerial.print(line);
-  MothSerial.print('\n');
+  for (size_t i = 0; i < line.length(); i += 1) {
+    MothSerial.write((uint8_t)line[i]);
+    MothSerial.flush();
+#if MOTH_CONTROL_TX_GAP_US > 0
+    delayMicroseconds(MOTH_CONTROL_TX_GAP_US);
+#endif
+  }
+  MothSerial.write((uint8_t)'\n');
   MothSerial.flush();
 }
 
@@ -236,14 +242,15 @@ bool bridgeWaitReady(uint32_t timeoutMs) {
         return true;
       }
       if (line.startsWith("ERR")) {
-        Serial.printf("Bridge READY failed on AudioMoth error after %lu ms; pings=%lu rx_bytes=%lu rx_lines=%lu busy_low_seen=%d busy_now=%d esp_req=%d\n",
+        Serial.printf("Bridge READY failed on AudioMoth error after %lu ms; pings=%lu rx_bytes=%lu rx_lines=%lu busy_low_seen=%d busy_now=%d esp_req=%d line='%s'\n",
                       (unsigned long)(millis() - start),
                       (unsigned long)pingsSent,
                       (unsigned long)bridgeRawBytesRead,
                       (unsigned long)bridgeLinesRead,
                       busyLowSeen ? 1 : 0,
                       mothBusy() ? 1 : 0,
-                      digitalRead(PIN_MOTH_REQ));
+                      digitalRead(PIN_MOTH_REQ),
+                      line.c_str());
         return false;
       }
       unexpectedLines += 1;
@@ -279,6 +286,12 @@ bool bridgeExpectResponse(const String &cmd, const char *expectedPrefix, String 
   String line;
   if (!bridgeReadExpectedLine(expectedPrefix, line, MOTH_LINE_TIMEOUT_MS)) {
     if (responseOut) *responseOut = line;
+    Serial.printf("AudioMoth command '%s' expected '%s' but got '%s' rx_bytes=%lu rx_lines=%lu\n",
+                  cmd.c_str(),
+                  expectedPrefix,
+                  line.length() ? line.c_str() : "<timeout>",
+                  (unsigned long)bridgeRawBytesRead,
+                  (unsigned long)bridgeLinesRead);
     return false;
   }
   if (responseOut) *responseOut = line;

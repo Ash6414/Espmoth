@@ -12,6 +12,7 @@ ESP32-WROOM-U Arduino firmware for the custom AudioMoth Dev ESP bridge firmware.
 - Reads battery voltage on GPIO34.
 - Reads charge controller CHRG on GPIO39 and DONE on GPIO36.
 - Keeps AudioMoth commands and production `GETPIPE` payload frames at stable 115200 baud when the matching AudioMoth bin supports protocol v4.
+- Byte-paces ESP-to-AudioMoth text commands with a conservative 2 ms gap so older/current AudioMoth builds do not drop characters while polling UART.
 - Requests AudioMoth file service using ESP_REQ on GPIO25 -> AudioMoth a7.
 - Respects AudioMoth busy state on GPIO26 <- AudioMoth a8.
 - Lists WAV files, fetches them in CRC-checked chunks, uploads chunks to server, and deletes from AudioMoth only after full server confirmation.
@@ -164,6 +165,12 @@ does not report matching ACKed pipe capability, the ESP fails loudly instead of
 silently crawling through the old 115200-baud `GET` path. For recovery work,
 `MOTH_ALLOW_115200_GET_FALLBACK` can be set to `1` in `Config.h`; the default
 field build keeps that slow path disabled. The ESP USB debug console also uses
+115200 baud.
+
+ESP-to-AudioMoth control lines use `MOTH_CONTROL_TX_GAP_US=2000` by default.
+This costs a few milliseconds per command but prevents chopped commands such as
+`TIME` arriving as partial fragments on AudioMoth builds that poll UART without
+an interrupt buffer. AudioMoth-to-ESP file data still streams normally at
 115200 baud.
 
 ## Command types supported
